@@ -1,0 +1,22 @@
+[project]
+name = "bot-stars"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+dependencies = ["python-telegram-bot>=21.10", "python-dotenv>=1.0.1"]
+requires-python = ">=3.13"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm.scripts]
+start = "python -m bot_stars.main"
+test = "pytest tests"
+
+[tool.pdm]
+package-dir = "src"
