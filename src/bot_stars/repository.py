@@ -2,9 +2,10 @@ from rushdb import RushDB
 from telegram import Message
 
 
-USERS_ENTITY = "users"
+# USERS_ENTITY = "users"
 
-
+#
+""" 
 class Repository:
     def __init__(self, token):
         self.db = RushDB(token)
@@ -42,3 +43,5 @@ class Repository:
                     "chat_id": chat_id,
                 },
             )
+""" 
+#
