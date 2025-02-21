@@ -5,7 +5,11 @@ description = ""
 authors = [
     {name = "Your Name",email = "you@example.com"}
 ]
-dependencies = ["python-telegram-bot>=21.10", "python-dotenv>=1.0.1"]
+dependencies = [
+    "python-telegram-bot>=21.10",
+    "python-dotenv>=1.0.1",
+    "rushdb>=0.3.0",
+]
 requires-python = ">=3.13"
 readme = "README.md"
 license = {text = "MIT"}
@@ -19,4 +23,5 @@ start = "python -m bot_stars.main"
 test = "pytest tests"
 
 [tool.pdm]
+distribution = true
 package-dir = "src"
