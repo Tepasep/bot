@@ -5,6 +5,7 @@ __pycache__/
 # Файлы конфигурации для venv
 venv/
 .env
+credentials.json
 
 # Файлы дистрибутивов и артефакты упаковки
 dist/
