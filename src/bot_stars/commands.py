@@ -1,5 +1,5 @@
 ### Команды бота
-from telegram import Update
+from telegram import KeyboardButton, Update
 
 # from .utils import getRepository
 from telegram.ext import (
@@ -11,7 +11,7 @@ from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 
 from bot_stars.utils import getSheetRepository
 
-NAME, LASTNAME, BIRTHDATE = range(3)
+NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
 
 
 # /start
@@ -120,27 +120,47 @@ async def get_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         context.user_data["birthdate"] = birthdate_str
 
-        # Выводим финальное сообщение
-        user_id = context.user_data["user_id"]
-        user_name = context.user_data["user_name"]
-        user_lastname = context.user_data["user_lastname"]
-
-        getSheetRepository(context).saveNewUser(
-            user_id, user_name, user_lastname, birthdate_str
+        keyboard = [[KeyboardButton("📱 Отправить номер", request_contact=True)]]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, one_time_keyboard=True, resize_keyboard=True
         )
-
         await update.message.reply_text(
-            f"Твой ID: {user_id}, имя: {user_name}, фамилия: {user_lastname}, день рождения: {birthdate_str}.",
-            reply_markup=ReplyKeyboardRemove(),
+            "Отлично! Теперь отправь свой номер телефона:", reply_markup=reply_markup
         )
-        context.user_data["in_dialog"] = False
-        return ConversationHandler.END
+
+        return PHONE
 
     except ValueError:
         await update.message.reply_text(
             "Неверный формат даты. Пожалуйста, введи дату в формате ДД.ММ.ГГГГ."
         )
         return BIRTHDATE
+
+
+async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["phone"] = (
+        update.message.contact.phone_number
+        if update.message.contact
+        else update.message.text
+    )
+
+    # Выводим финальное сообщение
+    user_id = context.user_data["user_id"]
+    user_name = context.user_data["user_name"]
+    user_lastname = context.user_data["user_lastname"]
+    birthdate_str = context.user_data["birthdate"]
+    phone = context.user_data["phone"]
+
+    getSheetRepository(context).saveNewUser(
+        user_id, user_name, user_lastname, birthdate_str, phone
+    )
+    await update.message.reply_text(
+        f"Спасибо! Ты успешно зарегистрирован.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    context.user_data["in_dialog"] = False
+
+    return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

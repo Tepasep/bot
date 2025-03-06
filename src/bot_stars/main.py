@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 from bot_stars.repository import SheetsRepository
 
-from .commands import start
+from .commands import PHONE, get_phone, start
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
@@ -55,6 +55,11 @@ def main():
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             LASTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lastname)],
             BIRTHDATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_birthdate)],
+            PHONE: [
+                MessageHandler(
+                    filters.CONTACT | (filters.TEXT & ~filters.COMMAND), get_phone
+                )
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],  # Обработка команды /cancel
     )
