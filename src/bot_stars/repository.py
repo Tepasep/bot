@@ -63,8 +63,13 @@ class SheetsRepository:
         self.sheet = self.client.open(spreadsheetName).sheet1
 
     def saveNewUser(
-        self, user_id: str, user_name: str, user_lastname: str, birthdate: str
+        self,
+        user_id: str,
+        user_name: str,
+        user_lastname: str,
+        birthdate: str,
+        phone: str,
     ):
         if self.sheet.acell("A1").value == None:
-            self.sheet.append_row(["Id", "Name", "Lastname", "Birthdate"])
-        self.sheet.append_row([user_id, user_name, user_lastname, birthdate])
+            self.sheet.append_row(["Id", "Name", "Lastname", "Birthdate", "Phone"])
+        self.sheet.append_row([user_id, user_name, user_lastname, birthdate, phone])
