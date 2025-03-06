@@ -1,6 +1,6 @@
 ### Команды бота
 from telegram import KeyboardButton, Update
-
+import os
 # from .utils import getRepository
 from telegram.ext import (
     ConversationHandler,
@@ -18,6 +18,19 @@ NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Запоминаем id пользователя
     user_id = update.message.from_user.id
+    sheet_repo = getSheetRepository(context)
+
+    # Проверяем, заблокирован ли пользователь
+    access_status = sheet_repo.getUserAccess(user_id)
+    if access_status and "Запрет" in access_status:
+        await update.message.reply_text("Нет доступа. Напиши @pulatovman")
+        return ConversationHandler.END
+
+    # Проверяем, зарегистрирован ли пользователь
+    if sheet_repo.sheet.find(str(user_id)):
+        await update.message.reply_text("Используй /viewstars")
+        return ConversationHandler.END
+    
     context.user_data["user_id"] = user_id
 
     keyboard = [["Отменить"]]
@@ -36,6 +49,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["in_dialog"] = True
     return NAME
 
+async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    sheet_repo = getSheetRepository(context)
+    # Проверяем, заблокирован ли пользователь
+    access_status = sheet_repo.getUserAccess(user_id)
+    if access_status and "Запрет" in access_status:
+        await update.message.reply_text("Нет доступа. Напиши @pulatovman")
+        return ConversationHandler.END
+
+    sheet_repo = getSheetRepository(context)
+
+    cell = sheet_repo.sheet.find(str(user_id))
+    if not cell:
+        await update.message.reply_text("Вы не зарегистрированы. Используйте /start.")
+        return
+
+    # Здесь можно добавить логику для отображения данных пользователя
+    await update.message.reply_text("Пока пусто...")
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_name = update.message.text
@@ -95,47 +126,40 @@ async def get_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     birthdate_str = update.message.text
     if birthdate_str == "Отменить":
         return await cancel(update, context)
+
+    # Удаление предыдущего сообщения бота
     if "last_bot_message_id" in context.user_data:
-        await context.bot.delete_message(
-            chat_id=update.message.chat_id,
-            message_id=context.user_data["last_bot_message_id"],
-        )
+        try:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=context.user_data["last_bot_message_id"],
+            )
+        except Exception as e:
+            print(f"Не удалось удалить сообщение: {e}")  # Логируем ошибку, но продолжаем выполнение
 
     try:
         birthdate = datetime.strptime(birthdate_str, "%d.%m.%Y")
-
-        # check
         today = datetime.today()
-        age = (
-            today.year
-            - birthdate.year
-            - ((today.month, today.day) < (birthdate.month, birthdate.day))
-        )
+        age = today.year - birthdate.year - ((today.month, today.day) < (birthdate.month, birthdate.day))
 
         if age > 50:
-            await update.message.reply_text(
-                "Кажется, ты ввел неверную дату. Пожалуйста, повтори ввод (формат ДД.ММ.ГГГГ)."
-            )
+            sent_message = await update.message.reply_text("Кажется, ты ввел неверную дату. Пожалуйста, повтори ввод (формат ДД.ММ.ГГГГ).")
+            context.user_data["last_bot_message_id"] = sent_message.message_id  # Сохраняем message_id
             return BIRTHDATE
 
         context.user_data["birthdate"] = birthdate_str
 
         keyboard = [[KeyboardButton("📱 Отправить номер", request_contact=True)]]
-        reply_markup = ReplyKeyboardMarkup(
-            keyboard, one_time_keyboard=True, resize_keyboard=True
-        )
-        await update.message.reply_text(
-            "Отлично! Теперь отправь свой номер телефона:", reply_markup=reply_markup
-        )
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        sent_message = await update.message.reply_text("Отлично! Теперь отправь свой номер телефона:", reply_markup=reply_markup)
+        context.user_data["last_bot_message_id"] = sent_message.message_id  # Сохраняем message_id
 
         return PHONE
 
     except ValueError:
-        await update.message.reply_text(
-            "Неверный формат даты. Пожалуйста, введи дату в формате ДД.ММ.ГГГГ."
-        )
+        sent_message = await update.message.reply_text("Неверный формат даты. Пожалуйста, введи дату в формате ДД.ММ.ГГГГ.")
+        context.user_data["last_bot_message_id"] = sent_message.message_id  # Сохраняем message_id
         return BIRTHDATE
-
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["phone"] = (
@@ -158,6 +182,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Спасибо! Ты успешно зарегистрирован.",
         reply_markup=ReplyKeyboardRemove(),
     )
+    context.user_data.clear()
     context.user_data["in_dialog"] = False
 
     return ConversationHandler.END
@@ -168,6 +193,55 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Регистрация остановлена, для продолжения используйте /start.",
         reply_markup=ReplyKeyboardRemove(),
     )
-
+    context.user_data.clear()
     context.user_data["in_dialog"] = False
     return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Регистрация остановлена, для продолжения используйте /start.", reply_markup=ReplyKeyboardRemove())
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+
+    if user_id not in admin_ids:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Использование: /block <user_id>")
+        return
+
+    target_user_id = context.args[0]
+    try:
+        target_user_id = int(target_user_id)
+    except ValueError:
+        await update.message.reply_text("Некорректный ID пользователя.")
+        return
+
+    getSheetRepository(context).blockUser(target_user_id)
+    await update.message.reply_text(f"Пользователь {target_user_id} заблокирован.")
+
+async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+
+    if user_id not in admin_ids:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Использование: /unblock <user_id>")
+        return
+
+    target_user_id = context.args[0]
+    try:
+        target_user_id = int(target_user_id)
+    except ValueError:
+        await update.message.reply_text("Некорректный ID пользователя.")
+        return
+
+    getSheetRepository(context).unblockUser(target_user_id)
+    await update.message.reply_text(f"Пользователь {target_user_id} разблокирован.")

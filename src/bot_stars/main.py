@@ -21,6 +21,9 @@ from .commands import (
     BIRTHDATE,
     LASTNAME,
     cancel,
+    block_user,
+    unblock_user,
+    viewstars,
 )
 
 
@@ -48,31 +51,22 @@ def main():
 
     # ConversationHandler для управления диалогом
     conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler("start", start)
-        ],  # Указываем команду /start как точку входа
+        entry_points=[CommandHandler("start", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             LASTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lastname)],
             BIRTHDATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_birthdate)],
             PHONE: [
-                MessageHandler(
-                    filters.CONTACT | (filters.TEXT & ~filters.COMMAND), get_phone
-                )
+                MessageHandler(filters.CONTACT | (filters.TEXT & ~filters.COMMAND), get_phone)
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],  # Обработка команды /cancel
+        fallbacks=[CommandHandler("cancel", cancel)],
     )
-
-    # Регистрируем ConversationHandler
+    app.add_handler(CommandHandler("block", block_user))
+    app.add_handler(CommandHandler("unblock", unblock_user))
+    app.add_handler(CommandHandler("viewstars", viewstars))
     app.add_handler(conv_handler)
-
-    # Добавление команд
-    """app.add_handler(CommandHandler("start", start))  -  как пример, но она нам больше не нужна"""
-
-    # Запуск бота
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
