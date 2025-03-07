@@ -1,20 +1,19 @@
 ### Команды бота
-from telegram import KeyboardButton, Update
+from telegram import KeyboardButton, Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 import os
-# from .utils import getRepository
 from telegram.ext import (
     ConversationHandler,
     ContextTypes,
+    CallbackQueryHandler
 )
 from datetime import datetime
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-
+from datetime import datetime
 from bot_stars.utils import getSheetRepository
 
 NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
+SELECT_USER, ENTER_STARS = range(2)
 
-
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Запоминаем id пользователя
     user_id = update.message.from_user.id
@@ -197,17 +196,12 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["in_dialog"] = False
     return ConversationHandler.END
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Регистрация остановлена, для продолжения используйте /start.", reply_markup=ReplyKeyboardRemove())
-    context.user_data.clear()
-    return ConversationHandler.END
 
 async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
     user_id = update.message.from_user.id
 
     if user_id not in admin_ids:
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
     if not context.args:
@@ -229,7 +223,6 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
     if user_id not in admin_ids:
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
     if not context.args:
@@ -245,3 +238,117 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     getSheetRepository(context).unblockUser(target_user_id)
     await update.message.reply_text(f"Пользователь {target_user_id} разблокирован.")
+
+# Добавление звёзд
+async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+    if user_id not in admin_ids:
+        return
+    
+    sheet_repo = getSheetRepository(context)
+
+    # Получаем все данные из таблицы
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Создаем inline-кнопки с именами и фамилиями пользователей
+    keyboard = []
+    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+        user_id_col = row[0]
+        name = row[1]
+        lastname = row[2]
+        if name and lastname and user_id_col:
+            # Создаем кнопку с именем и фамилией
+            button = InlineKeyboardButton(
+                text=f"{name} {lastname}",
+                callback_data=f"select_user_{user_id_col}"  # Передаем ID пользователя в callback_data
+            )
+            keyboard.append([button])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Выберите пользователя:",
+        reply_markup=reply_markup
+    )
+    return SELECT_USER
+
+async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    selected_user = update.message.text
+
+    if selected_user == "Отмена":
+        await stop(update, context) 
+        return ConversationHandler.END
+
+    context.user_data["selected_user"] = selected_user
+
+    await update.message.reply_text("Введите количество звёзд:", reply_markup=ReplyKeyboardRemove())
+
+    return ENTER_STARS
+
+async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stars = update.message.text
+
+    try:
+        stars = int(stars)
+    except ValueError:
+        await update.message.reply_text("Некорректное количество звёзд. Введите число.")
+        return ENTER_STARS
+
+    selected_user_id = context.user_data.get("selected_user_id")
+
+    sheet_repo = getSheetRepository(context)
+
+    # Получаем все данные из таблицы
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Ищем строку с выбранным пользователем
+    for i, row in enumerate(data):
+        if row[0] == selected_user_id:  # Ищем по ID пользователя (колонка A)
+            # Получаем текущее количество звёзд из колонки L (индекс 6, так как индексация с 0)
+            current_stars = row[6] if len(row) > 6 else "0"
+            current_stars = int(current_stars) if current_stars else 0
+
+            new_stars = current_stars + stars
+            sheet_repo.sheet.update_cell(i + 1, 7, str(new_stars))  # i + 1, так как строки нумеруются с 1
+
+            await update.message.reply_text(f"Добавлено {stars} звёзд пользователю {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
+            return ConversationHandler.END
+
+    await update.message.reply_text("Пользователь не найден.")
+    return ConversationHandler.END
+
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Действие отменено.", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Регистрация остановлена, для продолжения используйте /start.", reply_markup=ReplyKeyboardRemove())
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def handle_user_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    callback_data = query.data
+    user_id = callback_data.split("_")[-1]
+    context.user_data["selected_user_id"] = user_id
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
+    reply_markup = InlineKeyboardMarkup([[cancel_button]])
+    await query.edit_message_text(
+        "Введите количество звёзд:",
+        reply_markup=reply_markup
+    )
+    return ENTER_STARS
+
+async def cancel_stars_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer() 
+    await query.edit_message_text("Действие отменено.")
+    return ConversationHandler.END

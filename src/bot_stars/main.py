@@ -11,6 +11,7 @@ from telegram.ext import (
     ConversationHandler,
     Application,
     MessageHandler,
+    CallbackQueryHandler,
 )
 from .commands import (
     start,
@@ -24,6 +25,14 @@ from .commands import (
     block_user,
     unblock_user,
     viewstars,
+    add_stars,
+    select_user,
+    enter_stars,
+    SELECT_USER,
+    ENTER_STARS,
+    stop,
+    handle_user_selection,
+    cancel_stars_input,
 )
 
 
@@ -36,16 +45,14 @@ def main():
     if not TOKEN or not SPREADSHEET_NAME:
         raise ValueError("Не заданы TELEGRAM_BOT_TOKEN или SPREADSHEET_NAME")
 
-    ### Инициализация репозитория
+    # Инициализация репозитория
     sheet_repository = SheetsRepository("./credentials.json", SPREADSHEET_NAME)
-    #    repository = Repository(DB_TOKEN)
 
     # Создание приложения
     app = Application.builder().token(TOKEN).build()
 
     # Сохранение repository в bot_data
     app.bot_data["sheet_repository"] = sheet_repository
-    #    app.bot_data["repository"] = repository
 
     # start
 
@@ -62,6 +69,32 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
+    #ConversationHandler для команды /addstars
+    add_stars_handler = ConversationHandler(
+        entry_points=[CommandHandler("addstars", add_stars)],
+        states={
+            SELECT_USER: [
+                CallbackQueryHandler(
+                    handle_user_selection,
+                    pattern="^select_user_"
+                )
+            ],
+            ENTER_STARS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_stars),
+                CallbackQueryHandler(
+                    cancel_stars_input,
+                    pattern="^cancel_stars_input$"
+                )
+            ],
+        },
+        fallbacks=[CommandHandler("stop", stop)],
+        per_chat=True,
+        per_user=True,
+        per_message=False
+    )
+
+    app.add_handler(add_stars_handler)
     app.add_handler(CommandHandler("block", block_user))
     app.add_handler(CommandHandler("unblock", unblock_user))
     app.add_handler(CommandHandler("viewstars", viewstars))
