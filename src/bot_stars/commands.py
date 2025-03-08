@@ -241,7 +241,7 @@ async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "Выберите пользователя:",
+        "Выберите подростка:",
         reply_markup=reply_markup
     )
     return SELECT_USER
@@ -280,7 +280,7 @@ async def rem_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Выберите пользователя:",
+        "Выберите подростка:",
         reply_markup=reply_markup
     )
     return SELECT_USER
@@ -311,16 +311,16 @@ async def enter_stars1(update: Update, context: ContextTypes.DEFAULT_TYPE):
             current_stars = row[6] if len(row) > 6 else "0"
             current_stars = int(current_stars) if current_stars else 0
             if current_stars - stars < 0:
-                await update.message.reply_text(f"Недостаточно звёзд у пользователя {row[1]} {row[2]}")
+                await update.message.reply_text(f"Недостаточно звёзд у подростка {row[1]} {row[2]}")
                 return ConversationHandler.END
             
             new_stars = current_stars - stars
             sheet_repo.sheet.update_cell(i + 1, 7, str(new_stars))  # i + 1, так как строки нумеруются с 1
 
-            await update.message.reply_text(f"Списано {stars} звёзд у пользователя {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
+            await update.message.reply_text(f"Списано {stars} звёзд у подростка {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
             return ConversationHandler.END
 
-    await update.message.reply_text("Пользователь не найден.")
+    await update.message.reply_text("Подросток не найден.")
     return ConversationHandler.END
 
 
@@ -380,10 +380,10 @@ async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_stars = current_stars + stars
             sheet_repo.sheet.update_cell(i + 1, 7, str(new_stars))  # i + 1, так как строки нумеруются с 1
 
-            await update.message.reply_text(f"Добавлено {stars} звёзд пользователю {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
+            await update.message.reply_text(f"Добавлено {stars} звёзд подростку {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
             return ConversationHandler.END
 
-    await update.message.reply_text("Пользователь не найден.")
+    await update.message.reply_text("Подросток не найден.")
     return ConversationHandler.END
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -462,7 +462,7 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Выберите пользователя:",
+        "Выберите подростка:",
         reply_markup=reply_markup
     )
 
@@ -491,14 +491,14 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stars = row[6] if len(row) > 6 and row[6] else "0"  # Колонка L (Stars), если пусто, то 0
 
             await query.edit_message_text(
-                f"У пользователя {name} {lastname} {stars} звёзд."
+                f"У подростка {name} {lastname} {stars} звёзд."
 
                 # Тут можно сделать цикл для добавления коментариев операций к сообщению
 
             )
             return
 
-    await query.edit_message_text("Ошибка, пользователь не найден")
+    await query.edit_message_text("Подросток не найден")
 
 # Block and Unblock
 
