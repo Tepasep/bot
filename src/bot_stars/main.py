@@ -1,4 +1,5 @@
 import os
+import warnings
 from dotenv import load_dotenv
 
 from bot_stars.repository import SheetsRepository
@@ -13,6 +14,7 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
 )
+from telegram.warnings import PTBUserWarning
 from .commands import (
     start,
     get_name,
@@ -33,9 +35,21 @@ from .commands import (
     stop,
     handle_user_selection,
     cancel_stars_input,
+    ENTER_STARS1,
+    enter_stars1,
+    rem_stars,
+    handle_user_selection1,
+    select_user1,
+    list_users,
+    show_user_stars,
+    handle_confirmation,
+    handle_user_selection_block,
+    handle_confirmation1,
+    handle_user_selection_unblock,
+
 )
 
-
+warnings.filterwarnings("ignore", category=PTBUserWarning)
 def main():
     ### Инициализация переменных окружения
     load_dotenv()
@@ -54,9 +68,7 @@ def main():
     # Сохранение repository в bot_data
     app.bot_data["sheet_repository"] = sheet_repository
 
-    # start
-
-    # ConversationHandler для управления диалогом
+    # ConversationHandler для /start
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -70,7 +82,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    #ConversationHandler для команды /addstars
+    #ConversationHandler для /addstars
     add_stars_handler = ConversationHandler(
         entry_points=[CommandHandler("addstars", add_stars)],
         states={
@@ -78,6 +90,10 @@ def main():
                 CallbackQueryHandler(
                     handle_user_selection,
                     pattern="^select_user_"
+                ),
+                CallbackQueryHandler(
+                    cancel_stars_input,
+                    pattern="^cancel_stars_input$"
                 )
             ],
             ENTER_STARS: [
@@ -94,6 +110,48 @@ def main():
         per_message=False
     )
 
+    # ConversationHandler для /remstars
+    rem_stars_handler = ConversationHandler(
+        entry_points=[CommandHandler("remstars", rem_stars)],
+        states={
+            SELECT_USER: [
+                CallbackQueryHandler(
+                    handle_user_selection1,
+                    pattern="^select_user_"
+                ),
+                CallbackQueryHandler(
+                    cancel_stars_input,
+                    pattern="^cancel_stars_input$"
+                )
+            ],
+            ENTER_STARS1: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_stars1),
+                CallbackQueryHandler(
+                    cancel_stars_input,
+                    pattern="^cancel_stars_input$"
+                )
+            ],
+        },
+        fallbacks=[CommandHandler("stop", stop)],
+        per_chat=True,
+        per_user=True,
+        per_message=False
+    )
+
+    #block
+    app.add_handler(CommandHandler("block", block_user))
+    app.add_handler(CallbackQueryHandler(handle_user_selection_block, pattern="^block_user_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation, pattern="^confirm_block_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation, pattern="^cancel_block$"))
+    #unblock
+    app.add_handler(CommandHandler("unblock", unblock_user))
+    app.add_handler(CallbackQueryHandler(handle_user_selection_unblock, pattern="^unblock_user_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation1, pattern="^confirm_unblock_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation1, pattern="^cancel_unblock$"))
+
+    app.add_handler(CommandHandler("list", list_users))
+    app.add_handler(CallbackQueryHandler(show_user_stars, pattern="^user_stars_"))
+    app.add_handler(rem_stars_handler)
     app.add_handler(add_stars_handler)
     app.add_handler(CommandHandler("block", block_user))
     app.add_handler(CommandHandler("unblock", unblock_user))

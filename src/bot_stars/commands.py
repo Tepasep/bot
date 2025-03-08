@@ -12,7 +12,7 @@ from datetime import datetime
 from bot_stars.utils import getSheetRepository
 
 NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
-SELECT_USER, ENTER_STARS = range(2)
+SELECT_USER, ENTER_STARS, ENTER_STARS1 = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Запоминаем id пользователя
@@ -27,6 +27,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     # Проверяем, зарегистрирован ли пользователь
     if sheet_repo.sheet.find(str(user_id)):
+        admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+        user_id = update.message.from_user.id
+
+        if user_id in admin_ids:
+            await update.message.reply_text(f"Вы администратор, команды для вас: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock ", parse_mode="Markdown")
+            return
+        
         await update.message.reply_text("Используй /viewstars")
         return ConversationHandler.END
     
@@ -57,15 +64,18 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Нет доступа. Напиши @pulatovman")
         return ConversationHandler.END
 
-    sheet_repo = getSheetRepository(context)
-
     cell = sheet_repo.sheet.find(str(user_id))
     if not cell:
         await update.message.reply_text("Вы не зарегистрированы. Используйте /start.")
         return
+    data = sheet_repo.sheet.get_all_values()
+    stars = "0"
+    for row in data[1:]:
+        if len(row) > 6 and row[0] == str(user_id):
+            stars = row[6] if row[6] else "0"
+            break
 
-    # Здесь можно добавить логику для отображения данных пользователя
-    await update.message.reply_text("Пока пусто...")
+    await update.message.reply_text(f"Ваше количество звёзд: {stars}")
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_name = update.message.text
@@ -196,49 +206,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["in_dialog"] = False
     return ConversationHandler.END
 
-
-async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
-    user_id = update.message.from_user.id
-
-    if user_id not in admin_ids:
-        return
-
-    if not context.args:
-        await update.message.reply_text("Использование: /block <user_id>")
-        return
-
-    target_user_id = context.args[0]
-    try:
-        target_user_id = int(target_user_id)
-    except ValueError:
-        await update.message.reply_text("Некорректный ID пользователя.")
-        return
-
-    getSheetRepository(context).blockUser(target_user_id)
-    await update.message.reply_text(f"Пользователь {target_user_id} заблокирован.")
-
-async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
-    user_id = update.message.from_user.id
-
-    if user_id not in admin_ids:
-        return
-
-    if not context.args:
-        await update.message.reply_text("Использование: /unblock <user_id>")
-        return
-
-    target_user_id = context.args[0]
-    try:
-        target_user_id = int(target_user_id)
-    except ValueError:
-        await update.message.reply_text("Некорректный ID пользователя.")
-        return
-
-    getSheetRepository(context).unblockUser(target_user_id)
-    await update.message.reply_text(f"Пользователь {target_user_id} разблокирован.")
-
 # Добавление звёзд
 async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
@@ -268,12 +235,94 @@ async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 callback_data=f"select_user_{user_id_col}"  # Передаем ID пользователя в callback_data
             )
             keyboard.append([button])
+
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
+    keyboard.append([cancel_button])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "Выберите пользователя:",
+        reply_markup=reply_markup
+    )
+    return SELECT_USER
+
+async def rem_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+    if user_id not in admin_ids:
+        return
+    
+    sheet_repo = getSheetRepository(context)
+
+    # Получаем все данные из таблицы
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Создаем inline-кнопки с именами и фамилиями пользователей
+    keyboard = []
+    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+        user_id_col = row[0]
+        name = row[1]
+        lastname = row[2]
+        if name and lastname and user_id_col:
+            # Создаем кнопку с именем и фамилией
+            button = InlineKeyboardButton(
+                text=f"{name} {lastname}",
+                callback_data=f"select_user_{user_id_col}"  # Передаем ID пользователя в callback_data
+            )
+            keyboard.append([button])
+
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
+    keyboard.append([cancel_button])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "Выберите пользователя:",
         reply_markup=reply_markup
     )
     return SELECT_USER
+
+async def enter_stars1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stars = update.message.text
+
+    try:
+        stars = int(stars)
+    except ValueError:
+        await update.message.reply_text("Некорректное количество звёзд. Введите число.")
+        return ENTER_STARS1
+
+    selected_user_id = context.user_data.get("selected_user_id")
+
+    sheet_repo = getSheetRepository(context)
+
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Ищем строку с выбранным пользователем
+    for i, row in enumerate(data):
+        if row[0] == selected_user_id:  # Ищем по ID пользователя (колонка A)
+            # Получаем текущее количество звёзд из колонки L (индекс 6, так как индексация с 0)
+            current_stars = row[6] if len(row) > 6 else "0"
+            current_stars = int(current_stars) if current_stars else 0
+            if current_stars - stars < 0:
+                await update.message.reply_text(f"Недостаточно звёзд у пользователя {row[1]} {row[2]}")
+                return ConversationHandler.END
+            
+            new_stars = current_stars - stars
+            sheet_repo.sheet.update_cell(i + 1, 7, str(new_stars))  # i + 1, так как строки нумеруются с 1
+
+            await update.message.reply_text(f"Списано {stars} звёзд у пользователя {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
+            return ConversationHandler.END
+
+    await update.message.reply_text("Пользователь не найден.")
+    return ConversationHandler.END
+
 
 async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_user = update.message.text
@@ -287,6 +336,19 @@ async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите количество звёзд:", reply_markup=ReplyKeyboardRemove())
 
     return ENTER_STARS
+
+async def select_user1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    selected_user = update.message.text
+
+    if selected_user == "Отмена":
+        await stop(update, context) 
+        return ConversationHandler.END
+
+    context.user_data["selected_user"] = selected_user
+
+    await update.message.reply_text("Введите количество звёзд:", reply_markup=ReplyKeyboardRemove())
+
+    return ENTER_STARS1
 
 async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stars = update.message.text
@@ -347,8 +409,272 @@ async def handle_user_selection(update: Update, context: ContextTypes.DEFAULT_TY
     )
     return ENTER_STARS
 
+async def handle_user_selection1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    callback_data = query.data
+    user_id = callback_data.split("_")[-1]
+    context.user_data["selected_user_id"] = user_id
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
+    reply_markup = InlineKeyboardMarkup([[cancel_button]])
+    await query.edit_message_text(
+        "Введите количество звёзд:",
+        reply_markup=reply_markup
+    )
+    return ENTER_STARS1
+
 async def cancel_stars_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer() 
     await query.edit_message_text("Действие отменено.")
     return ConversationHandler.END
+
+# Просмотр звёзд для админов
+
+async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+
+    if user_id not in admin_ids:
+        return
+
+    sheet_repo = getSheetRepository(context)
+
+    # Получаем все данные из таблицы
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Создаем inline-кнопки с именами и фамилиями 
+    keyboard = []
+    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+        user_id_col = row[0]  # Колонка A Id
+        name = row[1]  # Колонка B Name
+        lastname = row[2]  # Колонка C Lastname
+        if name and lastname and user_id_col:
+            button = InlineKeyboardButton(
+                text=f"{name} {lastname}",
+                callback_data=f"user_stars_{user_id_col}"  # Передаем ID пользователя в callback_data
+            )
+            keyboard.append([button])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Выберите пользователя:",
+        reply_markup=reply_markup
+    )
+
+async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    callback_data = query.data
+
+    # Извлекаем ID пользователя из callback_data
+    user_id = callback_data.split("_")[-1]
+
+    sheet_repo = getSheetRepository(context)
+
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await query.edit_message_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Ищем строку с выбранным пользователем
+    for row in data:
+        if row[0] == user_id:  # Ищем по ID пользователя колонка A
+            name = row[1]  # Колонка B Name
+            lastname = row[2]  # Колонка C Lastname
+            stars = row[6] if len(row) > 6 and row[6] else "0"  # Колонка L (Stars), если пусто, то 0
+
+            await query.edit_message_text(
+                f"У пользователя {name} {lastname} {stars} звёзд."
+
+                # Тут можно сделать цикл для добавления коментариев операций к сообщению
+
+            )
+            return
+
+    await query.edit_message_text("Ошибка, пользователь не найден")
+
+# Block and Unblock
+
+async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+
+    if user_id not in admin_ids:
+        return
+
+    # Получаем данные из таблицы
+    sheet_repo = getSheetRepository(context)
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Создаем inline-кнопки с именами и фамилиями
+    keyboard = []
+    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+        user_id_col = row[0]
+        name = row[1]
+        lastname = row[2]
+        if name and lastname and user_id_col:
+            button = InlineKeyboardButton(
+                text=f"{name} {lastname}",
+                callback_data=f"block_user_{user_id_col}"  # Передаем ID пользователя в callback_data
+            )
+            keyboard.append([button])
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_block")
+    keyboard.append([cancel_button])
+
+    await update.message.reply_text(
+        "Выберите подростка:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_user_selection_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    target_user_id = query.data.replace("block_user_", "")
+
+    context.user_data["target_user_id"] = target_user_id
+
+    sheet_repo = getSheetRepository(context)
+    data = sheet_repo.sheet.get_all_values()
+    for row in data[1:]:
+        if row[0] == target_user_id:
+            name = row[1]
+            lastname = row[2]
+            break
+    keyboard = [
+        [InlineKeyboardButton("Да ✅", callback_data=f"confirm_block_{target_user_id}")],
+        [InlineKeyboardButton("Нет ❌", callback_data="cancel_block")]
+    ]
+
+    await query.edit_message_text(
+        f"Ограничить доступ подростку {name} {lastname}?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Если нажата кнопка "Да"
+    if query.data.startswith("confirm_block_"):
+        target_user_id = query.data.replace("confirm_block_", "")
+
+        sheet_repo = getSheetRepository(context)
+        data = sheet_repo.sheet.get_all_values()
+        name, lastname = None, None
+
+        for row in data[1:]:  # Пропускаем первую строку (заголовки)
+            if row[0] == target_user_id:
+                name = row[1]
+                lastname = row[2]
+                break
+
+        if name and lastname:
+            getSheetRepository(context).blockUser(target_user_id)
+            await query.edit_message_text(f"Подростоку {name} {lastname} ограничен доступ.")
+        else:
+            await query.edit_message_text("Выберите подростка нажатием на кнопку.")
+
+    # Если нажата кнопка "Нет"
+    elif query.data == "cancel_block":
+        await query.edit_message_text("Действие отменено.")
+
+
+async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+
+    if user_id not in admin_ids:
+        return
+
+    # Получаем данные из таблицы
+    sheet_repo = getSheetRepository(context)
+    try:
+        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+        return
+
+    # Создаем inline-кнопки с именами и фамилиями
+    keyboard = []
+    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+        user_id_col = row[0]
+        name = row[1]
+        lastname = row[2]
+        if name and lastname and user_id_col:
+            button = InlineKeyboardButton(
+                text=f"{name} {lastname}",
+                callback_data=f"unblock_user_{user_id_col}"  # Передаем ID пользователя в callback_data
+            )
+            keyboard.append([button])
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_block")
+    keyboard.append([cancel_button])
+
+    await update.message.reply_text(
+        "Выберите подростка:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_user_selection_unblock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    target_user_id = query.data.replace("unblock_user_", "")
+
+    context.user_data["target_user_id"] = target_user_id
+
+    sheet_repo = getSheetRepository(context)
+    data = sheet_repo.sheet.get_all_values()
+    for row in data[1:]:
+        if row[0] == target_user_id:
+            name = row[1]
+            lastname = row[2]
+            break
+    keyboard = [
+        [InlineKeyboardButton("Да ✅", callback_data=f"confirm_unblock_{target_user_id}")],
+        [InlineKeyboardButton("Нет ❌", callback_data="cancel_unblock")]
+    ]
+
+    await query.edit_message_text(
+        f"Разрешить доступ подростку {name} {lastname}?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Если нажата кнопка "Да"
+    if query.data.startswith("confirm_unblock_"):
+        target_user_id = query.data.replace("confirm_unblock_", "")
+
+        sheet_repo = getSheetRepository(context)
+        data = sheet_repo.sheet.get_all_values()
+        name, lastname = None, None
+
+        for row in data[1:]:  # Пропускаем первую строку (заголовки)
+            if row[0] == target_user_id:
+                name = row[1]
+                lastname = row[2]
+                break
+
+        if name and lastname:
+            getSheetRepository(context).unblockUser(target_user_id)
+            await query.edit_message_text(f"Подростоку {name} {lastname} разрешен доступ.")
+        else:
+            await query.edit_message_text("Выберите подростка нажатием на кнопку.")
+
+    # Если нажата кнопка "Нет"
+    elif query.data == "cancel_unblock":
+        await query.edit_message_text("Действие отменено.")
