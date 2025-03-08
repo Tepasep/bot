@@ -148,13 +148,11 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_user_selection_unblock, pattern="^unblock_user_"))
     app.add_handler(CallbackQueryHandler(handle_confirmation1, pattern="^confirm_unblock_"))
     app.add_handler(CallbackQueryHandler(handle_confirmation1, pattern="^cancel_unblock$"))
-
+    #другое
     app.add_handler(CommandHandler("list", list_users))
     app.add_handler(CallbackQueryHandler(show_user_stars, pattern="^user_stars_"))
     app.add_handler(rem_stars_handler)
     app.add_handler(add_stars_handler)
-    app.add_handler(CommandHandler("block", block_user))
-    app.add_handler(CommandHandler("unblock", unblock_user))
     app.add_handler(CommandHandler("viewstars", viewstars))
     app.add_handler(conv_handler)
     app.run_polling()
