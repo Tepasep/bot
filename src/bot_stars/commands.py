@@ -13,6 +13,7 @@ from bot_stars.utils import getSheetRepository
 
 NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
 SELECT_USER, ENTER_STARS, ENTER_STARS1 = range(3)
+ENTER_COMMENT, ENTER_COMMENT1 = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Запоминаем id пользователя
@@ -26,8 +27,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     # Проверяем, зарегистрирован ли пользователь
-    if sheet_repo.sheet.find(str(user_id)):
-        admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    if sheet_repo.sheet1.find(str(user_id)):
+        admin_ids_str = os.getenv("ADMIN_ID")
+        print(f"admin_ids_str = {admin_ids_str}")
+        admin_ids_str = admin_ids_str.replace('"', '').replace("'", "")
+        admin_ids = [int(id.strip()) for id in admin_ids_str.split(",")]
         user_id = update.message.from_user.id
 
         if user_id in admin_ids:
@@ -58,24 +62,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     sheet_repo = getSheetRepository(context)
-    # Проверяем, заблокирован ли пользователь
     access_status = sheet_repo.getUserAccess(user_id)
     if access_status and "Запрет" in access_status:
         await update.message.reply_text("Нет доступа. Напиши @pulatovman")
         return ConversationHandler.END
 
-    cell = sheet_repo.sheet.find(str(user_id))
+    cell = sheet_repo.sheet1.find(str(user_id))
     if not cell:
         await update.message.reply_text("Вы не зарегистрированы. Используйте /start.")
         return
-    data = sheet_repo.sheet.get_all_values()
+    data = sheet_repo.sheet1.get_all_values()
     stars = "0"
     for row in data[1:]:
         if len(row) > 6 and row[0] == str(user_id):
             stars = row[6] if row[6] else "0"
             break
+    loc_id = sheet_repo.sheet1.cell(cell.row, 8).value
+    comments = sheet_repo.get_last_comments(int(loc_id), limit=10)
 
-    await update.message.reply_text(f"Ваше количество звёзд: {stars}")
+    message = f"Ваше количество звёзд: {stars}\n\nПоследние операции:\n"
+    for comment in comments:
+        if str(comment).startswith("+"):
+            message += f"Пополнение {comment[1:]}\n"
+        elif str(comment).startswith("-"):
+            message += f"Списание {comment[1:]}\n"
+
+    await update.message.reply_text(message)
+
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_name = update.message.text
@@ -212,27 +225,24 @@ async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id not in admin_ids:
         return
-    
+
     sheet_repo = getSheetRepository(context)
 
-    # Получаем все данные из таблицы
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
 
-    # Создаем inline-кнопки с именами и фамилиями пользователей
     keyboard = []
-    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+    for row in data[1:]:
         user_id_col = row[0]
         name = row[1]
         lastname = row[2]
         if name and lastname and user_id_col:
-            # Создаем кнопку с именем и фамилией
             button = InlineKeyboardButton(
                 text=f"{name} {lastname}",
-                callback_data=f"select_user_{user_id_col}"  # Передаем ID пользователя в callback_data
+                callback_data=f"select_user_{user_id_col}"
             )
             keyboard.append([button])
 
@@ -253,25 +263,21 @@ async def rem_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     sheet_repo = getSheetRepository(context)
-
-    # Получаем все данные из таблицы
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
-
-    # Создаем inline-кнопки с именами и фамилиями пользователей
+    
     keyboard = []
-    for row in data[1:]:  # Пропускаем первую строку (заголовки)
+    for row in data[1:]:  
         user_id_col = row[0]
         name = row[1]
         lastname = row[2]
         if name and lastname and user_id_col:
-            # Создаем кнопку с именем и фамилией
             button = InlineKeyboardButton(
                 text=f"{name} {lastname}",
-                callback_data=f"select_user_{user_id_col}"  # Передаем ID пользователя в callback_data
+                callback_data=f"select_user_{user_id_col}"
             )
             keyboard.append([button])
 
@@ -294,28 +300,39 @@ async def enter_stars1(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Некорректное количество звёзд. Введите число.")
         return ENTER_STARS1
 
+    context.user_data["stars"] = stars
+    await update.message.reply_text("Введите комментарий:")
+    return ENTER_COMMENT1
+
+async def enter_comment1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    comment = update.message.text
+    stars = context.user_data["stars"]
     selected_user_id = context.user_data.get("selected_user_id")
 
     sheet_repo = getSheetRepository(context)
 
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
 
-    # Ищем строку с выбранным пользователем
     for i, row in enumerate(data):
-        if row[0] == selected_user_id:  # Ищем по ID пользователя (колонка A)
-            # Получаем текущее количество звёзд из колонки L (индекс 6, так как индексация с 0)
+        if row[0] == selected_user_id:
             current_stars = row[6] if len(row) > 6 else "0"
             current_stars = int(current_stars) if current_stars else 0
+
             if current_stars - stars < 0:
                 await update.message.reply_text(f"Недостаточно звёзд у подростка {row[1]} {row[2]}")
                 return ConversationHandler.END
-            
+
             new_stars = current_stars - stars
-            sheet_repo.sheet.update_cell(i + 1, 7, str(new_stars))  # i + 1, так как строки нумеруются с 1
+            sheet_repo.sheet1.update_cell(i + 1, 7, str(new_stars))
+            loc_id = sheet_repo.sheet1.cell(i + 1, 8).value
+
+            # comment
+            comment_text = f"-{stars} звёзд: {comment}"
+            sheet_repo.add_comment_to_sheet2(int(loc_id), comment_text)
 
             await update.message.reply_text(f"Списано {stars} звёзд у подростка {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
             return ConversationHandler.END
@@ -359,26 +376,37 @@ async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Некорректное количество звёзд. Введите число.")
         return ENTER_STARS
 
+    context.user_data["stars"] = stars
+
+    # Запрашиваем комментарий
+    await update.message.reply_text("Введите комментарий:")
+    return ENTER_COMMENT
+
+async def enter_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    comment = update.message.text
+    stars = context.user_data["stars"]
     selected_user_id = context.user_data.get("selected_user_id")
 
     sheet_repo = getSheetRepository(context)
 
-    # Получаем все данные из таблицы
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
 
-    # Ищем строку с выбранным пользователем
     for i, row in enumerate(data):
-        if row[0] == selected_user_id:  # Ищем по ID пользователя (колонка A)
-            # Получаем текущее количество звёзд из колонки L (индекс 6, так как индексация с 0)
+        if row[0] == selected_user_id:
             current_stars = row[6] if len(row) > 6 else "0"
             current_stars = int(current_stars) if current_stars else 0
 
             new_stars = current_stars + stars
-            sheet_repo.sheet.update_cell(i + 1, 7, str(new_stars))  # i + 1, так как строки нумеруются с 1
+            sheet_repo.sheet1.update_cell(i + 1, 7, str(new_stars))
+
+            loc_id = sheet_repo.sheet1.cell(i + 1, 8).value
+            #comment
+            comment_text = f"+{stars} звёзд: {comment}"
+            sheet_repo.add_comment_to_sheet2(int(loc_id), comment_text)
 
             await update.message.reply_text(f"Добавлено {stars} звёзд подростку {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
             return ConversationHandler.END
@@ -442,7 +470,7 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Получаем все данные из таблицы
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()  # Получаем все строки таблицы
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
@@ -478,7 +506,7 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sheet_repo = getSheetRepository(context)
 
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()  # Получаем все строки таблицы
     except Exception as e:
         await query.edit_message_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
@@ -512,7 +540,7 @@ async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Получаем данные из таблицы
     sheet_repo = getSheetRepository(context)
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()  # Получаем все строки таблицы
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
@@ -546,7 +574,7 @@ async def handle_user_selection_block(update: Update, context: ContextTypes.DEFA
     context.user_data["target_user_id"] = target_user_id
 
     sheet_repo = getSheetRepository(context)
-    data = sheet_repo.sheet.get_all_values()
+    data = sheet_repo.sheet1.get_all_values()
     for row in data[1:]:
         if row[0] == target_user_id:
             name = row[1]
@@ -571,7 +599,7 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
         target_user_id = query.data.replace("confirm_block_", "")
 
         sheet_repo = getSheetRepository(context)
-        data = sheet_repo.sheet.get_all_values()
+        data = sheet_repo.sheet1.get_all_values()
         name, lastname = None, None
 
         for row in data[1:]:  # Пропускаем первую строку (заголовки)
@@ -601,7 +629,7 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Получаем данные из таблицы
     sheet_repo = getSheetRepository(context)
     try:
-        data = sheet_repo.sheet.get_all_values()  # Получаем все строки таблицы
+        data = sheet_repo.sheet1.get_all_values()  # Получаем все строки таблицы
     except Exception as e:
         await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
@@ -635,7 +663,7 @@ async def handle_user_selection_unblock(update: Update, context: ContextTypes.DE
     context.user_data["target_user_id"] = target_user_id
 
     sheet_repo = getSheetRepository(context)
-    data = sheet_repo.sheet.get_all_values()
+    data = sheet_repo.sheet1.get_all_values()
     for row in data[1:]:
         if row[0] == target_user_id:
             name = row[1]
@@ -660,7 +688,7 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
         target_user_id = query.data.replace("confirm_unblock_", "")
 
         sheet_repo = getSheetRepository(context)
-        data = sheet_repo.sheet.get_all_values()
+        data = sheet_repo.sheet1.get_all_values()
         name, lastname = None, None
 
         for row in data[1:]:  # Пропускаем первую строку (заголовки)

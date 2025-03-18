@@ -46,7 +46,11 @@ from .commands import (
     handle_user_selection_block,
     handle_confirmation1,
     handle_user_selection_unblock,
-
+    ENTER_COMMENT,
+    ENTER_COMMENT1,
+    enter_comment,
+    enter_comment1,
+    
 )
 
 warnings.filterwarnings("ignore", category=PTBUserWarning)
@@ -82,7 +86,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    #ConversationHandler для /addstars
+    # ConversationHandler для /addstars
     add_stars_handler = ConversationHandler(
         entry_points=[CommandHandler("addstars", add_stars)],
         states={
@@ -102,6 +106,9 @@ def main():
                     cancel_stars_input,
                     pattern="^cancel_stars_input$"
                 )
+            ],
+            ENTER_COMMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_comment),
             ],
         },
         fallbacks=[CommandHandler("stop", stop)],
@@ -131,14 +138,17 @@ def main():
                     pattern="^cancel_stars_input$"
                 )
             ],
+            ENTER_COMMENT1: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_comment1),
+            ],
         },
         fallbacks=[CommandHandler("stop", stop)],
         per_chat=True,
         per_user=True,
         per_message=False
     )
-
     #block
+
     app.add_handler(CommandHandler("block", block_user))
     app.add_handler(CallbackQueryHandler(handle_user_selection_block, pattern="^block_user_"))
     app.add_handler(CallbackQueryHandler(handle_confirmation, pattern="^confirm_block_"))
