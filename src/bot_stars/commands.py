@@ -12,7 +12,6 @@ from datetime import datetime
 from bot_stars.utils import getSheetRepository
 import random
 import pymorphy2
-import pkg_resources
 
 morph = pymorphy2.MorphAnalyzer()
 
@@ -300,7 +299,7 @@ async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def enter_comment(operation: str):  
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
-        comment = update.message.text
+        comment = update.message.text.lower()
         stars = context.user_data["stars"]
         selected_user_id = context.user_data.get("selected_user_id")
         
@@ -310,16 +309,12 @@ def enter_comment(operation: str):
         COLUMN_LASTNAME = 2
         COLUMN_STARS = 6
 
-        case = 'accs'  # Винительный падеж
-        declined_stars = decline_stars(stars, case)
-        declined_comment = decline_comment(comment, case)
-
         NOTIFICATION_MESSAGES = [
-            "🚀 Круто! Тебе прилетело {stars} {declined_stars} за то, что {declined_comment}. Так держать!",
-            "🌟 Бум! На твой счёт упало {stars} {declined_stars} за {declined_comment}. Продолжаем сиять?",
-            "💫 Эй, звёздный герой! За {declined_comment} тебе начислено {stars} {declined_stars}. Светишься ещё ярче!",
-            "🌠 Ты только что поймал {stars} {declined_stars} за {declined_comment}. Красавчик!",
-            "✨ Вау! За {declined_comment} ты получил {stars} {declined_stars}! Продолжай быть легендой!",
+            "🚀 Круто! Тебе прилетело {stars} {declined_stars} за то, что ты {comment}. Так держать!",
+            "🌟 Бум! На твой счёт упало {stars} {declined_stars} за то, что ты {comment}. Продолжаем сиять?",
+            "💫 Эй, звёздный герой! За то, что ты {comment}, тебе начислено {stars} {declined_stars}. Светишься ещё ярче!",
+            "🌠 Ты только что поймал {stars} {declined_stars} за то, что ты {comment}. Красавчик!",
+            "✨ Вау! За то, что ты {comment}, ты получил {stars} {declined_stars}! Продолжай быть легендой!",
         ]
 
         try:
@@ -345,16 +340,31 @@ def enter_comment(operation: str):
                 #comment
                 if operation == "add": 
                     sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Пополнение", stars, comment)
-                    # уведомление
                     message_template = random.choice(NOTIFICATION_MESSAGES)
-                    message = message_template.format(stars=stars, declined_stars=declined_stars, declined_comment=declined_comment)
+                    
+                    # Определяем глагол для склонения "звезда"
+                    if "прилетела" in message_template:
+                        declined_stars = await decline_stars(stars, "прилетела")
+                    elif "упала" in message_template:
+                        declined_stars = await decline_stars(stars, "упала")
+                    elif "начислено" in message_template:
+                        declined_stars = await decline_stars(stars, "начислено")
+                    elif "поймал" in message_template:
+                        declined_stars = await decline_stars(stars, "поймал")
+                    elif "получил" in message_template:
+                        declined_stars = await decline_stars(stars, "получил")
+                    else:
+                        declined_stars = await decline_stars(stars, "упала")  # По умолчанию
+                    
+                    # Формируем сообщение
+                    message = message_template.format(stars=stars, declined_stars=declined_stars, comment=comment)
                     await context.bot.send_message(
-                        chat_id=selected_user_id,  # ID пользователя, которому отправляем уведомление
+                        chat_id=selected_user_id,
                         text=message
                     )
-                    
                 else:
                     sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Списание", stars, comment)
+
                 await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} звёзд подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
                 return ConversationHandler.END
 
@@ -641,21 +651,24 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
     elif query.data == "cancel_unblock":
         await query.edit_message_text("Действие отменено.")
 
-async def decline_stars(stars: int, case: str) -> str:
-    # для склонения звезд
-    word_stars = morph.parse("звезда")[0]
-    declined_stars = word_stars.make_agree_with_number(stars).inflect({case}).word
-    return declined_stars
+async def decline_stars(stars: int, verb: str) -> str:
+    # Определяем падеж в зависимости от глагола
+    if verb in ["упала", "прилетела"]:
+        case = 'nomn'  # Именительный падеж (упала 1 звезда)
+    elif verb in ["упало", "прилетело", "начислено"]:
+        case = 'nomn'  # Именительный падеж (упало 2 звезды)
+    elif verb in ["поймал", "получил"]:
+        case = 'accs'  # Винительный падеж (поймал 1 звезду)
+    else:
+        case = 'nomn'  # По умолчанию именительный падеж
 
-async def decline_comment(comment: str, case: str) -> str:
-    # для склонения комментов
-
-    declined_comment = []
-    for word in comment.split():
-        parsed_word = morph.parse(word)[0]
-        if parsed_word.tag.POS in {'NOUN', 'ADJF', 'ADJS'}:  # Склоняем существительные, прилагательные
-            declined_word = parsed_word.inflect({case}).word
-            declined_comment.append(declined_word)
-        else:
-            declined_comment.append(word)
-    return " ".join(declined_comment)
+    # Ручное склонение слова "звезда"
+    if stars % 10 == 1 and stars % 100 != 11:
+        if case == 'nomn':
+            return "звезда"
+        elif case == 'accs':
+            return "звезду"
+    elif 2 <= stars % 10 <= 4 and not (12 <= stars % 100 <= 14):
+        return "звезды"
+    else:
+        return "звёзд"
