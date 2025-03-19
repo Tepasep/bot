@@ -11,6 +11,10 @@ from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from datetime import datetime
 from bot_stars.utils import getSheetRepository
 import random
+import pymorphy2
+import pkg_resources
+
+morph = pymorphy2.MorphAnalyzer()
 
 NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
 SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
@@ -299,19 +303,23 @@ def enter_comment(operation: str):
         comment = update.message.text
         stars = context.user_data["stars"]
         selected_user_id = context.user_data.get("selected_user_id")
-        star = await sklon(stars)
-
+        
         sheet_repo = getSheetRepository(context)
         COLUMN_ID = 0
         COLUMN_NAME = 1
         COLUMN_LASTNAME = 2
         COLUMN_STARS = 6
+
+        case = 'accs'  # Винительный падеж
+        declined_stars = decline_stars(stars, case)
+        declined_comment = decline_comment(comment, case)
+
         NOTIFICATION_MESSAGES = [
-            "🚀 Круто! Тебе прилетело {stars} {star} за то, что {comment}. Так держать!",
-            "🌟 Бум! На твой счёт упало {stars} {star} за {comment}. Продолжаем сиять?",
-            "💫 Эй, звёздный герой! За {comment} тебе начислено {stars} {star}. Светишься ещё ярче!",
-            "🌠 Ты только что поймал {stars} {star} за {comment}. Красавчик!",
-            "✨ Вау! За {comment} ты получил {stars} {star}! Продолжай быть легендой!",
+            "🚀 Круто! Тебе прилетело {stars} {declined_stars} за то, что {declined_comment}. Так держать!",
+            "🌟 Бум! На твой счёт упало {stars} {declined_stars} за {declined_comment}. Продолжаем сиять?",
+            "💫 Эй, звёздный герой! За {declined_comment} тебе начислено {stars} {declined_stars}. Светишься ещё ярче!",
+            "🌠 Ты только что поймал {stars} {declined_stars} за {declined_comment}. Красавчик!",
+            "✨ Вау! За {declined_comment} ты получил {stars} {declined_stars}! Продолжай быть легендой!",
         ]
 
         try:
@@ -339,11 +347,7 @@ def enter_comment(operation: str):
                     sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Пополнение", stars, comment)
                     # уведомление
                     message_template = random.choice(NOTIFICATION_MESSAGES)
-                    message = message_template.format(
-                        stars=stars,
-                        comment=comment,
-                        star = star,
-                    )
+                    message = message_template.format(stars=stars, declined_stars=declined_stars, declined_comment=declined_comment)
                     await context.bot.send_message(
                         chat_id=selected_user_id,  # ID пользователя, которому отправляем уведомление
                         text=message
@@ -351,7 +355,7 @@ def enter_comment(operation: str):
                     
                 else:
                     sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Списание", stars, comment)
-                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} {star} подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
+                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} звёзд подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
                 return ConversationHandler.END
 
         await update.message.reply_text("Подросток не найден.")
@@ -637,22 +641,21 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
     elif query.data == "cancel_unblock":
         await query.edit_message_text("Действие отменено.")
 
-async def sklon(star):
-    star = str(star)
-    if int(star) <= 20:
-        if star == "1":
-            return "звезду"
-        elif 2 <= star <= 4:
-            return "звезды"
-        elif 5 <= star <= 20:
-            return "звёзд"
-    else:
-        sstar = star[:-1]
-        if sstar == "1":
-            return "звезду"
-        elif 2 <= sstar <= 4:
-            return "звезды"
-        elif 5 <= sstar <= 9:
-            return "звёзд"
-        elif sstar == "0":
-            return "звёзд"
+async def decline_stars(stars: int, case: str) -> str:
+    # для склонения звезд
+    word_stars = morph.parse("звезда")[0]
+    declined_stars = word_stars.make_agree_with_number(stars).inflect({case}).word
+    return declined_stars
+
+async def decline_comment(comment: str, case: str) -> str:
+    # для склонения комментов
+
+    declined_comment = []
+    for word in comment.split():
+        parsed_word = morph.parse(word)[0]
+        if parsed_word.tag.POS in {'NOUN', 'ADJF', 'ADJS'}:  # Склоняем существительные, прилагательные
+            declined_word = parsed_word.inflect({case}).word
+            declined_comment.append(declined_word)
+        else:
+            declined_comment.append(word)
+    return " ".join(declined_comment)
