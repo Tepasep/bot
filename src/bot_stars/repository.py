@@ -35,15 +35,11 @@ class SheetsRepository:
 
         return max(loc_ids) + 1
     
-    def add_comment_to_sheet2(self, loc_id: int, comment: str):
-        headers = self.sheet2.row_values(1)
-        if str(loc_id) in headers:
-            col_index = headers.index(str(loc_id)) + 1
-        else:
-            col_index = len(headers) + 1
-            self.sheet2.update_cell(1, col_index, str(loc_id))
-        next_row = len(self.sheet2.col_values(col_index)) + 1
-        self.sheet2.update_cell(next_row, col_index, comment)
+    def add_comment_to_sheet2(self, loc_id: int, operation: str, stars: int, comment: str):
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Добавляем новую строку с данными
+        self.sheet2.append_row([loc_id, operation, stars, comment, current_time])
 
     def saveNewUser(
         self,
@@ -54,18 +50,21 @@ class SheetsRepository:
         phone: str,
     ):
         if self.sheet1.acell("A1").value == None:
-            self.sheet1.append_row(["Id", "Name", "Lastname", "Birthdate", "Phone", "Access", "LocID" ])
+            self.sheet1.append_row(["Id", "Name", "Lastname", "Birthdate", "Phone", "Access"])
         loc_id = self.get_next_loc_id()
-        self.sheet1.append_row([user_id, user_name, user_lastname, birthdate, phone, "","", str(loc_id),])
-        self.sheet2.update_cell(1, len(self.sheet2.row_values(1)) + 1, str(loc_id))
+        self.sheet1.append_row([user_id, user_name, user_lastname, birthdate, phone, "",""])
 
-    def get_last_comments(self, loc_id: int, limit: int = 10) -> list:
-        headers = self.sheet2.row_values(1)
-        if str(loc_id) not in headers:
+    def get_last_comments(self, user_id: int, limit: int = 10) -> list:
+        try:
+            data = self.sheet2.get_all_values()
+        except Exception as e:
             return []
-        col_index = headers.index(str(loc_id)) + 1
-        comments = self.sheet2.col_values(col_index)[1:]
-        return comments[-limit:]
+
+        # Фильтруем строки по ID
+        filtered_data = [row for row in data[1:] if row[0] == str(user_id)]
+
+        # Возвращаем последние 10 операций
+        return filtered_data[-limit:]
 
     def blockUser(self, user_id: str):
         cell = self.sheet1.find(str(user_id))  

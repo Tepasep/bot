@@ -10,6 +10,7 @@ from datetime import datetime
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from datetime import datetime
 from bot_stars.utils import getSheetRepository
+import random
 
 NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
 SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
@@ -77,14 +78,16 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stars = row[6] if row[6] else "0"
             break
     loc_id = sheet_repo.sheet1.cell(cell.row, 8).value
-    comments = sheet_repo.get_last_comments(int(loc_id), limit=10)
+    comments = sheet_repo.get_last_comments(int(user_id), limit=10)
 
     message = f"Ваше количество звёзд: {stars}\n\nПоследние операции:\n"
     for comment in comments:
-        if str(comment).startswith("+"):
-            message += f"Пополнение {comment[1:]}\n"
-        elif str(comment).startswith("-"):
-            message += f"Списание {comment[1:]}\n"
+        operation_type = comment[1]  # Колонка "Тип операции"
+        stars = comment[2] # Колонка "Звёзды"
+        comment_text = comment[3]  # Колонка "Комментарий"
+        datetime = comment[4]  # Колонка "Дата и время"
+
+        message += f"{operation_type} {stars} звёзд: {comment_text} ({datetime})\n"
 
     await update.message.reply_text(message)
 
@@ -292,16 +295,24 @@ async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def enter_comment(operation: str):  
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        
         comment = update.message.text
         stars = context.user_data["stars"]
         selected_user_id = context.user_data.get("selected_user_id")
+        star = await sklon(stars)
 
         sheet_repo = getSheetRepository(context)
-        
         COLUMN_ID = 0
         COLUMN_NAME = 1
         COLUMN_LASTNAME = 2
         COLUMN_STARS = 6
+        NOTIFICATION_MESSAGES = [
+            "🚀 Круто! Тебе прилетело {stars} {star} за то, что {comment}. Так держать!",
+            "🌟 Бум! На твой счёт упало {stars} {star} за {comment}. Продолжаем сиять?",
+            "💫 Эй, звёздный герой! За {comment} тебе начислено {stars} {star}. Светишься ещё ярче!",
+            "🌠 Ты только что поймал {stars} {star} за {comment}. Красавчик!",
+            "✨ Вау! За {comment} ты получил {stars} {star}! Продолжай быть легендой!",
+        ]
 
         try:
             data = sheet_repo.sheet1.get_all_values()
@@ -323,13 +334,24 @@ def enter_comment(operation: str):
                     new_stars = current_stars - stars
                         
                 sheet_repo.sheet1.update_cell(i + 1, COLUMN_STARS + 1, str(new_stars))
-
-                loc_id = sheet_repo.sheet1.cell(i + 1, 8).value
                 #comment
-                comment_text = f"+{stars} звёзд: {comment}"
-                sheet_repo.add_comment_to_sheet2(int(loc_id), comment_text)
-
-                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} звёзд подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
+                if operation == "add": 
+                    sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Пополнение", stars, comment)
+                    # уведомление
+                    message_template = random.choice(NOTIFICATION_MESSAGES)
+                    message = message_template.format(
+                        stars=stars,
+                        comment=comment,
+                        star = star,
+                    )
+                    await context.bot.send_message(
+                        chat_id=selected_user_id,  # ID пользователя, которому отправляем уведомление
+                        text=message
+                    )
+                    
+                else:
+                    sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Списание", stars, comment)
+                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} {star} подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
                 return ConversationHandler.END
 
         await update.message.reply_text("Подросток не найден.")
@@ -614,3 +636,23 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
     # Если нажата кнопка "Нет"
     elif query.data == "cancel_unblock":
         await query.edit_message_text("Действие отменено.")
+
+async def sklon(star):
+    star = str(star)
+    if int(star) <= 20:
+        if star == "1":
+            return "звезду"
+        elif 2 <= star <= 4:
+            return "звезды"
+        elif 5 <= star <= 20:
+            return "звёзд"
+    else:
+        sstar = star[:-1]
+        if sstar == "1":
+            return "звезду"
+        elif 2 <= sstar <= 4:
+            return "звезды"
+        elif 5 <= sstar <= 9:
+            return "звёзд"
+        elif sstar == "0":
+            return "звёзд"

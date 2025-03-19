@@ -111,7 +111,7 @@ def main():
             per_message=False
         )
 
-    # ConversationHandler для /addstars и /remstars
+    # Handler для /addstars и /remstars
     add_stars_handler = createMoveStarsHandler("addstars", "add")
     rem_stars_handler = createMoveStarsHandler("remstars", "rem")
     
