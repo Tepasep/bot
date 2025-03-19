@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 from bot_stars.repository import SheetsRepository
 
-from .commands import PHONE, get_phone, start
+from .commands import PHONE, enter_stars, get_phone, start
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
@@ -27,30 +27,20 @@ from .commands import (
     block_user,
     unblock_user,
     viewstars,
-    add_stars,
-    select_user,
-    enter_stars,
-    SELECT_USER,
+    select_teen,
+    SELECT_TEEN,
     ENTER_STARS,
+    ENTER_COMMENT,
     stop,
-    handle_user_selection,
-    cancel_stars_input,
-    ENTER_STARS1,
-    enter_stars1,
-    rem_stars,
-    handle_user_selection1,
-    select_user1,
+    handle_teen_selection,
+    cancel_conversation,
     list_users,
     show_user_stars,
     handle_confirmation,
     handle_user_selection_block,
     handle_confirmation1,
     handle_user_selection_unblock,
-    ENTER_COMMENT,
-    ENTER_COMMENT1,
     enter_comment,
-    enter_comment1,
-    
 )
 
 warnings.filterwarnings("ignore", category=PTBUserWarning)
@@ -86,67 +76,45 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    # ConversationHandler для /addstars
-    add_stars_handler = ConversationHandler(
-        entry_points=[CommandHandler("addstars", add_stars)],
-        states={
-            SELECT_USER: [
-                CallbackQueryHandler(
-                    handle_user_selection,
-                    pattern="^select_user_"
-                ),
-                CallbackQueryHandler(
-                    cancel_stars_input,
-                    pattern="^cancel_stars_input$"
-                )
-            ],
-            ENTER_STARS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_stars),
-                CallbackQueryHandler(
-                    cancel_stars_input,
-                    pattern="^cancel_stars_input$"
-                )
-            ],
-            ENTER_COMMENT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_comment),
-            ],
-        },
-        fallbacks=[CommandHandler("stop", stop)],
-        per_chat=True,
-        per_user=True,
-        per_message=False
-    )
+    def createMoveStarsHandler(command: str, operation: str):
+        return ConversationHandler(
+            entry_points=[CommandHandler(command, select_teen)],
+            states={
+                SELECT_TEEN: [
+                    CallbackQueryHandler(
+                        handle_teen_selection,
+                        pattern="^select_teen_"
+                    ),
+                    CallbackQueryHandler(
+                        cancel_conversation,
+                        pattern="cancel"
+                    )
+                ],
+                ENTER_STARS: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, enter_stars),
+                    CallbackQueryHandler(
+                        cancel_conversation,
+                        pattern="cancel"
+                    )
+                ],
+                ENTER_COMMENT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, enter_comment(operation)),
+                    CallbackQueryHandler(
+                        cancel_conversation,
+                        pattern="cancel"
+                    )
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", stop)],
+            per_chat=True,
+            per_user=True,
+            per_message=False
+        )
 
-    # ConversationHandler для /remstars
-    rem_stars_handler = ConversationHandler(
-        entry_points=[CommandHandler("remstars", rem_stars)],
-        states={
-            SELECT_USER: [
-                CallbackQueryHandler(
-                    handle_user_selection1,
-                    pattern="^select_user_"
-                ),
-                CallbackQueryHandler(
-                    cancel_stars_input,
-                    pattern="^cancel_stars_input$"
-                )
-            ],
-            ENTER_STARS1: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_stars1),
-                CallbackQueryHandler(
-                    cancel_stars_input,
-                    pattern="^cancel_stars_input$"
-                )
-            ],
-            ENTER_COMMENT1: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_comment1),
-            ],
-        },
-        fallbacks=[CommandHandler("stop", stop)],
-        per_chat=True,
-        per_user=True,
-        per_message=False
-    )
+    # ConversationHandler для /addstars и /remstars
+    add_stars_handler = createMoveStarsHandler("addstars", "add")
+    rem_stars_handler = createMoveStarsHandler("remstars", "rem")
+    
     #block
 
     app.add_handler(CommandHandler("block", block_user))
@@ -161,8 +129,8 @@ def main():
     #другое
     app.add_handler(CommandHandler("list", list_users))
     app.add_handler(CallbackQueryHandler(show_user_stars, pattern="^user_stars_"))
-    app.add_handler(rem_stars_handler)
     app.add_handler(add_stars_handler)
+    app.add_handler(rem_stars_handler)
     app.add_handler(CommandHandler("viewstars", viewstars))
     app.add_handler(conv_handler)
     app.run_polling()

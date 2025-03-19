@@ -12,8 +12,7 @@ from datetime import datetime
 from bot_stars.utils import getSheetRepository
 
 NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
-SELECT_USER, ENTER_STARS, ENTER_STARS1 = range(3)
-ENTER_COMMENT, ENTER_COMMENT1 = range(2)
+SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Запоминаем id пользователя
@@ -219,8 +218,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["in_dialog"] = False
     return ConversationHandler.END
 
-# Добавление звёзд
-async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Выбор подростка из списка
+async def select_teen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
     user_id = update.message.from_user.id
     if user_id not in admin_ids:
@@ -242,11 +241,11 @@ async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if name and lastname and user_id_col:
             button = InlineKeyboardButton(
                 text=f"{name} {lastname}",
-                callback_data=f"select_user_{user_id_col}"
+                callback_data=f"select_teen_{user_id_col}"
             )
             keyboard.append([button])
 
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
     keyboard.append([cancel_button])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -254,92 +253,7 @@ async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Выберите подростка:",
         reply_markup=reply_markup
     )
-    return SELECT_USER
-
-async def rem_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
-    user_id = update.message.from_user.id
-    if user_id not in admin_ids:
-        return
-    
-    sheet_repo = getSheetRepository(context)
-    try:
-        data = sheet_repo.sheet1.get_all_values()
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
-        return
-    
-    keyboard = []
-    for row in data[1:]:  
-        user_id_col = row[0]
-        name = row[1]
-        lastname = row[2]
-        if name and lastname and user_id_col:
-            button = InlineKeyboardButton(
-                text=f"{name} {lastname}",
-                callback_data=f"select_user_{user_id_col}"
-            )
-            keyboard.append([button])
-
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
-    keyboard.append([cancel_button])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "Выберите подростка:",
-        reply_markup=reply_markup
-    )
-    return SELECT_USER
-
-async def enter_stars1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    stars = update.message.text
-
-    try:
-        stars = int(stars)
-    except ValueError:
-        await update.message.reply_text("Некорректное количество звёзд. Введите число.")
-        return ENTER_STARS1
-
-    context.user_data["stars"] = stars
-    await update.message.reply_text("Введите комментарий:")
-    return ENTER_COMMENT1
-
-async def enter_comment1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    comment = update.message.text
-    stars = context.user_data["stars"]
-    selected_user_id = context.user_data.get("selected_user_id")
-
-    sheet_repo = getSheetRepository(context)
-
-    try:
-        data = sheet_repo.sheet1.get_all_values()
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
-        return
-
-    for i, row in enumerate(data):
-        if row[0] == selected_user_id:
-            current_stars = row[6] if len(row) > 6 else "0"
-            current_stars = int(current_stars) if current_stars else 0
-
-            if current_stars - stars < 0:
-                await update.message.reply_text(f"Недостаточно звёзд у подростка {row[1]} {row[2]}")
-                return ConversationHandler.END
-
-            new_stars = current_stars - stars
-            sheet_repo.sheet1.update_cell(i + 1, 7, str(new_stars))
-            loc_id = sheet_repo.sheet1.cell(i + 1, 8).value
-
-            # comment
-            comment_text = f"-{stars} звёзд: {comment}"
-            sheet_repo.add_comment_to_sheet2(int(loc_id), comment_text)
-
-            await update.message.reply_text(f"Списано {stars} звёзд у подростка {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
-            return ConversationHandler.END
-
-    await update.message.reply_text("Подросток не найден.")
-    return ConversationHandler.END
-
+    return SELECT_TEEN
 
 async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_user = update.message.text
@@ -354,66 +268,73 @@ async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ENTER_STARS
 
-async def select_user1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    selected_user = update.message.text
-
-    if selected_user == "Отмена":
-        await stop(update, context) 
-        return ConversationHandler.END
-
-    context.user_data["selected_user"] = selected_user
-
-    await update.message.reply_text("Введите количество звёзд:", reply_markup=ReplyKeyboardRemove())
-
-    return ENTER_STARS1
-
 async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stars = update.message.text
+    query = update.callback_query
 
     try:
         stars = int(stars)
+        if stars < 0:
+            await update.message.reply_text("Количество звёзд не может быть отрицательным.")
+            return ENTER_STARS
     except ValueError:
         await update.message.reply_text("Некорректное количество звёзд. Введите число.")
         return ENTER_STARS
 
     context.user_data["stars"] = stars
-
-    # Запрашиваем комментарий
-    await update.message.reply_text("Введите комментарий:")
+    
+    
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
+    reply_markup = InlineKeyboardMarkup([[cancel_button]])
+    # Запрашиваем комментарий 
+    await update.message.reply_text("Введите комментарий:", reply_markup=reply_markup)
     return ENTER_COMMENT
 
-async def enter_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    comment = update.message.text
-    stars = context.user_data["stars"]
-    selected_user_id = context.user_data.get("selected_user_id")
+def enter_comment(operation: str):  
+    async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        comment = update.message.text
+        stars = context.user_data["stars"]
+        selected_user_id = context.user_data.get("selected_user_id")
 
-    sheet_repo = getSheetRepository(context)
+        sheet_repo = getSheetRepository(context)
+        
+        COLUMN_ID = 0
+        COLUMN_NAME = 1
+        COLUMN_LASTNAME = 2
+        COLUMN_STARS = 6
 
-    try:
-        data = sheet_repo.sheet1.get_all_values()
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
-        return
+        try:
+            data = sheet_repo.sheet1.get_all_values()
+        except Exception as e:
+            await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
+            return
 
-    for i, row in enumerate(data):
-        if row[0] == selected_user_id:
-            current_stars = row[6] if len(row) > 6 else "0"
-            current_stars = int(current_stars) if current_stars else 0
+        for i, row in enumerate(data):
+            if row[COLUMN_ID] == selected_user_id:
+                current_stars = row[COLUMN_STARS] if len(row) > COLUMN_STARS else "0"
+                current_stars = int(current_stars) if current_stars else 0
 
-            new_stars = current_stars + stars
-            sheet_repo.sheet1.update_cell(i + 1, 7, str(new_stars))
+                if (operation == "add"):
+                    new_stars = current_stars + stars
+                else:
+                    if current_stars - stars < 0:
+                        await update.message.reply_text(f"Недостаточно звёзд у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}.")
+                        return ConversationHandler.END
+                    new_stars = current_stars - stars
+                        
+                sheet_repo.sheet1.update_cell(i + 1, COLUMN_STARS + 1, str(new_stars))
 
-            loc_id = sheet_repo.sheet1.cell(i + 1, 8).value
-            #comment
-            comment_text = f"+{stars} звёзд: {comment}"
-            sheet_repo.add_comment_to_sheet2(int(loc_id), comment_text)
+                loc_id = sheet_repo.sheet1.cell(i + 1, 8).value
+                #comment
+                comment_text = f"+{stars} звёзд: {comment}"
+                sheet_repo.add_comment_to_sheet2(int(loc_id), comment_text)
 
-            await update.message.reply_text(f"Добавлено {stars} звёзд подростку {row[1]} {row[2]}. Теперь у него {new_stars} звёзд.")
-            return ConversationHandler.END
+                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} звёзд подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
+                return ConversationHandler.END
 
-    await update.message.reply_text("Подросток не найден.")
-    return ConversationHandler.END
-
+        await update.message.reply_text("Подросток не найден.")
+        return ConversationHandler.END
+    return handler
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Действие отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
@@ -423,13 +344,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
-async def handle_user_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_teen_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     callback_data = query.data
     user_id = callback_data.split("_")[-1]
     context.user_data["selected_user_id"] = user_id
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
+    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
     reply_markup = InlineKeyboardMarkup([[cancel_button]])
     await query.edit_message_text(
         "Введите количество звёзд:",
@@ -437,21 +358,8 @@ async def handle_user_selection(update: Update, context: ContextTypes.DEFAULT_TY
     )
     return ENTER_STARS
 
-async def handle_user_selection1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    callback_data = query.data
-    user_id = callback_data.split("_")[-1]
-    context.user_data["selected_user_id"] = user_id
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_stars_input")
-    reply_markup = InlineKeyboardMarkup([[cancel_button]])
-    await query.edit_message_text(
-        "Введите количество звёзд:",
-        reply_markup=reply_markup
-    )
-    return ENTER_STARS1
 
-async def cancel_stars_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer() 
     await query.edit_message_text("Действие отменено.")
