@@ -80,7 +80,7 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(row) > 6 and row[0] == str(user_id):
             stars = row[6] if row[6] else "0"
             break
-    loc_id = sheet_repo.sheet1.cell(cell.row, 8).value
+
     comments = sheet_repo.get_last_comments(int(user_id), limit=10)
 
     message = f"Ваше количество звёзд: {stars}\n\nПоследние операции:\n"
@@ -89,8 +89,8 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stars = comment[2] # Колонка "Звёзды"
         comment_text = comment[3]  # Колонка "Комментарий"
         datetime = comment[4]  # Колонка "Дата и время"
-
-        message += f"{operation_type} {stars} звёзд: {comment_text} ({datetime})\n"
+        dec_stars = await decline_stars_message(stars)
+        message += f"{operation_type} {stars} {dec_stars}: {comment_text} ({datetime})\n"
 
     await update.message.reply_text(message)
 
@@ -364,8 +364,9 @@ def enter_comment(operation: str):
                     )
                 else:
                     sheet_repo.add_comment_to_sheet2(int(selected_user_id), "Списание", stars, comment)
-
-                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} звёзд подростку {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} звёзд.")
+                dec_stars = await decline_stars_message(stars)
+                new_dec_stars = await decline_stars_message(dec_stars)
+                await update.message.reply_text(f"{"Добавлено" if operation == "add" else "Списано"} {stars} {dec_stars} у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}.")
                 return ConversationHandler.END
 
         await update.message.reply_text("Подросток не найден.")
@@ -439,6 +440,8 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    
     query = update.callback_query
     await query.answer()
 
@@ -461,9 +464,10 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = row[1]  # Колонка B Name
             lastname = row[2]  # Колонка C Lastname
             stars = row[6] if len(row) > 6 and row[6] else "0"  # Колонка L (Stars), если пусто, то 0
-
+            dec_stars_list = await decline_stars_message(stars)
+            print(dec_stars_list)
             await query.edit_message_text(
-                f"У подростка {name} {lastname} {stars} звёзд."
+                f"У подростка {name} {lastname} {stars} {dec_stars_list}."
 
                 # Тут можно сделать цикл для добавления коментариев операций к сообщению
 
@@ -652,23 +656,35 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("Действие отменено.")
 
 async def decline_stars(stars: int, verb: str) -> str:
-    # Определяем падеж в зависимости от глагола
     if verb in ["упала", "прилетела"]:
-        case = 'nomn'  # Именительный падеж (упала 1 звезда)
+        case = 'nomn'
     elif verb in ["упало", "прилетело", "начислено"]:
-        case = 'nomn'  # Именительный падеж (упало 2 звезды)
+        case = 'nomn'
     elif verb in ["поймал", "получил"]:
-        case = 'accs'  # Винительный падеж (поймал 1 звезду)
+        case = 'accs'
     else:
-        case = 'nomn'  # По умолчанию именительный падеж
+        case = 'nomn'
 
-    # Ручное склонение слова "звезда"
+    # склонение слова "звезда"
     if stars % 10 == 1 and stars % 100 != 11:
         if case == 'nomn':
             return "звезда"
         elif case == 'accs':
             return "звезду"
     elif 2 <= stars % 10 <= 4 and not (12 <= stars % 100 <= 14):
+        return "звезды"
+    else:
+        return "звёзд"
+    
+async def decline_stars_message(stars: int) -> str:
+    print("decline stars")
+    if 11 <= stars % 100 <= 19:
+        return "звёзд"
+    last_digit = stars % 10
+    
+    if last_digit == 1:
+        return "звезда"
+    elif 2 <= last_digit <= 4:
         return "звезды"
     else:
         return "звёзд"
