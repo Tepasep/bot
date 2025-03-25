@@ -94,7 +94,7 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = f"Ваше количество звёзд: {stars}\n\nПоследние операции:\n"
     for comment in comments:
         operation_type = comment[1]  # Колонка "Тип операции"
-        stars = comment[2]  # Колонка "Звёзды"
+        stars = int(comment[2])  # Колонка "Звёзды"
         comment_text = comment[3]  # Колонка "Комментарий"
         datetime = comment[4]  # Колонка "Дата и время"
         dec_stars = await decline_stars_message(stars)
@@ -326,7 +326,10 @@ async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
     reply_markup = InlineKeyboardMarkup([[cancel_button]])
     # Запрашиваем комментарий
-    await update.message.reply_text("Введите комментарий в виде действия в прошедшем времени. Например: помыл посуду, рассказал свидетельство на сцене итп:", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Введите комментарий в виде действия в прошедшем времени. Например: помыл посуду, рассказал свидетельство на сцене итп:",
+        reply_markup=reply_markup,
+    )
     return ENTER_COMMENT
 
 
@@ -334,7 +337,7 @@ def enter_comment(operation: str):
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         comment = update.message.text.lower()
-        stars = context.user_data["stars"]
+        stars = int(context.user_data["stars"])
         selected_user_id = context.user_data.get("selected_user_id")
 
         sheet_repo = getSheetRepository(context)
@@ -380,7 +383,7 @@ def enter_comment(operation: str):
                         int(selected_user_id), "Списание", stars, comment
                     )
                 dec_stars = await decline_stars_message(stars)
-                new_dec_stars = await decline_stars_message(dec_stars)
+                new_dec_stars = await decline_stars_message(new_stars)
                 await update.message.reply_text(
                     f"{"Добавлено" if operation == "add" else "Списано"} {stars} {dec_stars} у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
                 )
@@ -488,7 +491,7 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if row[0] == user_id:  # Ищем по ID пользователя колонка A
             name = row[1]  # Колонка B Name
             lastname = row[2]  # Колонка C Lastname
-            stars = (
+            stars = int(
                 row[6] if len(row) > 6 and row[6] else "0"
             )  # Колонка L (Stars), если пусто, то 0
             dec_stars_list = await decline_stars_message(stars)
