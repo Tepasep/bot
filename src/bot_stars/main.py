@@ -53,12 +53,17 @@ def main():
     load_dotenv()
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
+    CREDENTIALS_FILE = os.getenv("CREDENTIALS_FILE")
 
+    if not CREDENTIALS_FILE:
+        raise ValueError("Не задан CREDENTIALS_FILE")
+    if not os.path.exists(CREDENTIALS_FILE):
+        raise FileNotFoundError(f"Файл {CREDENTIALS_FILE} не найден")
     if not TOKEN or not SPREADSHEET_NAME:
         raise ValueError("Не заданы TELEGRAM_BOT_TOKEN или SPREADSHEET_NAME")
 
     # Инициализация репозитория
-    sheet_repository = SheetsRepository("./credentials.json", SPREADSHEET_NAME)
+    sheet_repository = SheetsRepository(CREDENTIALS_FILE, SPREADSHEET_NAME)
 
     # Создание приложения
     app = Application.builder().token(TOKEN).build()
