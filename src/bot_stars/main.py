@@ -43,6 +43,8 @@ from .commands import (
     handle_confirmation1,
     handle_user_selection_unblock,
     enter_comment,
+    GENDER,
+    get_gender,
 )
 
 warnings.filterwarnings("ignore", category=PTBUserWarning)
@@ -73,6 +75,7 @@ def main():
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             LASTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lastname)],
             BIRTHDATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_birthdate)],
+            GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_gender)],
             PHONE: [
                 MessageHandler(
                     filters.CONTACT | (filters.TEXT & ~filters.COMMAND), get_phone

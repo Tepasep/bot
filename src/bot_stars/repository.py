@@ -48,11 +48,11 @@ class SheetsRepository:
         user_lastname: str,
         birthdate: str,
         phone: str,
+        gender: str,
     ):
         if self.sheet1.acell("A1").value == None:
-            self.sheet1.append_row(["Id", "Name", "Lastname", "Birthdate", "Phone", "Access"])
-        loc_id = self.get_next_loc_id()
-        self.sheet1.append_row([user_id, user_name, user_lastname, birthdate, phone, "",""])
+            self.sheet1.append_row(["Id", "Name", "Lastname", "Birthdate", "Phone", "Access", "Stars", "Gender"])
+        self.sheet1.append_row([user_id, user_name, user_lastname, birthdate, phone, "","", gender])
 
     def get_last_comments(self, user_id: int, limit: int = 10) -> list:
         try:
@@ -62,7 +62,6 @@ class SheetsRepository:
 
         # Фильтруем строки по ID
         filtered_data = [row for row in data[1:] if row[0] == str(user_id)]
-
         # Возвращаем последние 10 операций
         return filtered_data[-limit:]
 
@@ -82,3 +81,7 @@ class SheetsRepository:
         if cell:
             return self.sheet1.cell(cell.row, 6).value
         return None
+    def getUserGender(self, user_id: str) -> str:
+        cell = self.sheet1.find(str(user_id))
+        if cell:
+            return self.sheet1.cell(cell.row, 8).value

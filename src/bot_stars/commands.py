@@ -1,4 +1,3 @@
-### Команды бота
 from telegram import (
     KeyboardButton,
     Update,
@@ -14,11 +13,10 @@ from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from datetime import datetime
 from bot_stars.utils import getSheetRepository
 import random
-import pymorphy2
 
 # morph = pymorphy2.MorphAnalyzer()
 
-NAME, LASTNAME, BIRTHDATE, PHONE = range(4)
+NAME, LASTNAME, BIRTHDATE, GENDER, PHONE = range(5)
 SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
 
 
@@ -26,7 +24,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Запоминаем id пользователя
     user_id = update.message.from_user.id
     sheet_repo = getSheetRepository(context)
-
     # Проверяем, заблокирован ли пользователь
     access_status = sheet_repo.getUserAccess(user_id)
     if access_status and "Запрет" in access_status:
@@ -36,18 +33,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Проверяем, зарегистрирован ли пользователь
     if sheet_repo.sheet1.find(str(user_id)):
         admin_ids_str = os.getenv("ADMIN_ID")
-        print(f"admin_ids_str = {admin_ids_str}")
         admin_ids_str = admin_ids_str.replace('"', "").replace("'", "")
         admin_ids = [int(id.strip()) for id in admin_ids_str.split(",")]
         user_id = update.message.from_user.id
 
         if user_id in admin_ids:
             await update.message.reply_text(
-                f"Вы администратор, команды для вас: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock ",
+                f"Ты администратор, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars",
                 parse_mode="Markdown",
             )
             return
-
+        
         await update.message.reply_text("Используй /viewstars")
         return ConversationHandler.END
 
@@ -90,6 +86,7 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     comments = sheet_repo.get_last_comments(int(user_id), limit=10)
+    comments = comments[::-1]
 
     message = f"Ваше количество звёзд: {stars}\n\nПоследние операции:\n"
     for comment in comments:
@@ -172,9 +169,7 @@ async def get_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 message_id=context.user_data["last_bot_message_id"],
             )
         except Exception as e:
-            print(
-                f"Не удалось удалить сообщение: {e}"
-            )  # Логируем ошибку, но продолжаем выполнение
+            print(f"Не удалось удалить сообщение: {e}")
 
     try:
         birthdate = datetime.strptime(birthdate_str, "%d.%m.%Y")
@@ -189,60 +184,106 @@ async def get_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             sent_message = await update.message.reply_text(
                 "Кажется, ты ввел неверную дату. Пожалуйста, повтори ввод (формат ДД.ММ.ГГГГ)."
             )
-            context.user_data["last_bot_message_id"] = (
-                sent_message.message_id
-            )  # Сохраняем message_id
+            context.user_data["last_bot_message_id"] = sent_message.message_id
             return BIRTHDATE
 
         context.user_data["birthdate"] = birthdate_str
 
-        keyboard = [[KeyboardButton("📱 Отправить номер", request_contact=True)]]
-        reply_markup = ReplyKeyboardMarkup(
-            keyboard, one_time_keyboard=True, resize_keyboard=True
-        )
+        # Создаем клавиатуру для выбора пола
+        reply_keyboard = [["Мужской", "Женский"]]
         sent_message = await update.message.reply_text(
-            "Отлично! Теперь отправь свой номер телефона:", reply_markup=reply_markup
+            "Выберите ваш пол:",
+            reply_markup=ReplyKeyboardMarkup(
+                reply_keyboard, 
+                resize_keyboard=True,
+                one_time_keyboard=True
+            ),
         )
-        context.user_data["last_bot_message_id"] = (
-            sent_message.message_id
-        )  # Сохраняем message_id
-
-        return PHONE
+        context.user_data["last_bot_message_id"] = sent_message.message_id
+        return GENDER
 
     except ValueError:
         sent_message = await update.message.reply_text(
             "Неверный формат даты. Пожалуйста, введи дату в формате ДД.ММ.ГГГГ."
         )
-        context.user_data["last_bot_message_id"] = (
-            sent_message.message_id
-        )  # Сохраняем message_id
+        context.user_data["last_bot_message_id"] = sent_message.message_id
         return BIRTHDATE
+
+async def get_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    gender_str = update.message.text
+    if gender_str == "Отменить":
+        return await cancel(update, context)
+    
+    if gender_str not in ["Мужской", "Женский"]:  # Исправлено здесь
+        sent_message = await update.message.reply_text(
+            "Пожалуйста, выберите пол, используя кнопки ниже."
+        )
+        context.user_data["last_bot_message_id"] = sent_message.message_id
+        return GENDER
+
+    if "last_bot_message_id" in context.user_data:
+        try:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=context.user_data["last_bot_message_id"],
+            )
+        except Exception as e:
+            print(f"Не удалось удалить сообщение: {e}")
+
+    context.user_data["gender"] = gender_str
+
+    # Запрашиваем номер телефона
+    keyboard = [[KeyboardButton("📱 Отправить номер", request_contact=True)]]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard, one_time_keyboard=True, resize_keyboard=True
+    )
+    sent_message = await update.message.reply_text(
+        "Отлично! Теперь отправь свой номер телефона:", 
+        reply_markup=reply_markup
+    )
+    context.user_data["last_bot_message_id"] = sent_message.message_id
+    return PHONE
 
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["phone"] = (
-        update.message.contact.phone_number
-        if update.message.contact
-        else update.message.text
-    )
+    # Получаем список админов
+    admin_ids_str = os.getenv("ADMIN_ID")
+    admin_ids_str = admin_ids_str.replace('"', "").replace("'", "")
+    admin_ids = [int(id.strip()) for id in admin_ids_str.split(",")]
+    user_id = update.message.from_user.id
 
-    # Выводим финальное сообщение
+    # Получаем номер телефона
+    phone_number = (
+        update.message.contact.phone_number if update.message.contact else update.message.text
+    )
+    context.user_data["phone"] = phone_number
+
+    # Сохраняем все данные пользователя
     user_id = context.user_data["user_id"]
     user_name = context.user_data["user_name"]
     user_lastname = context.user_data["user_lastname"]
     birthdate_str = context.user_data["birthdate"]
+    gender = context.user_data["gender"]
     phone = context.user_data["phone"]
 
+    # Сохраняем в репозиторий
     getSheetRepository(context).saveNewUser(
-        user_id, user_name, user_lastname, birthdate_str, phone
+        user_id, user_name, user_lastname, birthdate_str, phone, gender
     )
-    await update.message.reply_text(
-        f"Спасибо! Ты успешно зарегистрирован.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+
+    if gender == "Мужской":
+        if user_id in admin_ids:
+            await update.message.reply_text(f"Ты успешно зарегистрирован, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars" ,parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+        else:
+            await update.message.reply_text(f"Ты успешно зарегистрирован, для просмотра звёзд используй /viewstars",parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+    elif gender == "Женский":
+        if user_id in admin_ids:
+            await update.message.reply_text(f"Ты успешно зарегистрирована, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars",parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+        else:
+            await update.message.reply_text(f"Ты успешно зарегистрирована, для просмотра звёзд используй /viewstars",parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+    
     context.user_data.clear()
     context.user_data["in_dialog"] = False
-
     return ConversationHandler.END
 
 
@@ -339,13 +380,11 @@ def enter_comment(operation: str):
         comment = update.message.text.lower()
         stars = int(context.user_data["stars"])
         selected_user_id = context.user_data.get("selected_user_id")
-
         sheet_repo = getSheetRepository(context)
         COLUMN_ID = 0
         COLUMN_NAME = 1
         COLUMN_LASTNAME = 2
         COLUMN_STARS = 6
-
         try:
             data = sheet_repo.sheet1.get_all_values()
         except Exception as e:
@@ -373,8 +412,8 @@ def enter_comment(operation: str):
                     sheet_repo.add_comment_to_sheet2(
                         int(selected_user_id), "Пополнение", stars, comment
                     )
-
-                    message = get_random_notification_message(stars, comment)
+                    user_gender = sheet_repo.getUserGender(selected_user_id)
+                    message = await get_random_notification_message(stars, comment, selected_user_id, user_gender)
                     await context.bot.send_message(
                         chat_id=selected_user_id, text=message
                     )
@@ -495,7 +534,6 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 row[6] if len(row) > 6 and row[6] else "0"
             )  # Колонка L (Stars), если пусто, то 0
             dec_stars_list = await decline_stars_message(stars)
-            print(dec_stars_list)
             await query.edit_message_text(
                 f"У подростка {name} {lastname} {stars} {dec_stars_list}."
                 # Тут можно сделать цикл для добавления коментариев операций к сообщению
@@ -704,6 +742,8 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("Действие отменено.")
 
 
+import random
+
 def decline_text_by_number(value: int, text1: str, text2to4: str, textMore: str) -> str:
     if 11 <= value % 100 <= 19:
         return textMore
@@ -717,22 +757,38 @@ def decline_text_by_number(value: int, text1: str, text2to4: str, textMore: str)
         return textMore
 
 
-def get_random_notification_message(stars: int, comment: str):
+async def get_random_notification_message(stars: int, comment: str, selected_user_id: int, user_gender: str):
+    # Формы для глаголов и существительных
+    if user_gender == "Женский":
+        verb_forms = ("получила", "получила", "получила")
+        caught_forms = ("поймала", "поймала", "поймала")
+        compliment = "Молодец!"
+    else:
+        verb_forms = ("получил", "получил", "получил")
+        caught_forms = ("поймал", "поймал", "поймал")
+        compliment = "Красавчик!"
 
-    declined_stars = decline_text_by_number(stars, "звезда", "звезды", "звёзд")
+    # Формы для фразы с "упала звезда" (именительный падеж)
+    fall_forms = (
+        f"упала 1 звезда", 
+        f"упали {stars} звезды", 
+        f"упало {stars} звёзд"
+    )
+
+    # Формы для остальных случаев (винительный падеж)
+    stars_accusative = decline_text_by_number(stars, "звезду", "звезды", "звёзд")
+    stars_nominative = decline_text_by_number(stars, "звезда", "звезды", "звёзд")
+    
     NOTIFICATION_MESSAGES = [
-        f"🚀 Круто! Тебе {decline_text_by_number(
-            stars, "прилетела", "прилетело", "прилетело"
-        )} {stars} {declined_stars} за то, что ты {comment}. Так держать!",
-        f"🌟 Бум! На твой счёт {decline_text_by_number(stars, "упала", "упало", "упало")} {stars} {declined_stars} за то, что ты {comment}. Продолжай сиять!",
-        f"💫 Эй, звёздный герой! За то, что ты {comment}, тебе {decline_text_by_number(
-            stars, "начислена", "начислено", "начислено"
-        )} {stars} {declined_stars}. Светишься ещё ярче!",
-        f"🌠 Ты только что поймал {stars} {decline_text_by_number(stars, "звезду", "звезды", "звёзд")} за то, что ты {comment}. Красавчик!",
-        f"✨ Вау! За то, что ты {comment}, ты получил {stars} {declined_stars}! Продолжай быть легендой!",
+        f"🚀 Круто! Ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative} за то, что ты {comment}. {compliment}",
+        f"🌟 Бум! На твой счёт {decline_text_by_number(stars, *fall_forms)} за то, что ты {comment}. Продолжай сиять!",
+        f"💫 Эй, звёздный герой! За то, что ты {comment}, тебе {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}. Так держать!",
+        f"🌠 Ты только что {decline_text_by_number(stars, *caught_forms)} {stars} {stars_accusative} за то, что ты {comment}. {compliment}",
+        f"✨ Вау! За то, что ты {comment}, ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}! {compliment}",
     ]
+    
     return random.choice(NOTIFICATION_MESSAGES)
 
 
 async def decline_stars_message(stars: int) -> str:
-    return decline_text_by_number(stars, "звезда", "звезды", "звёзд")
+    return decline_text_by_number(stars, "звезду", "звезды", "звёзд")
