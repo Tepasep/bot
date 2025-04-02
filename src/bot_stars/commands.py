@@ -413,7 +413,7 @@ def enter_comment(operation: str):
                         int(selected_user_id), "Пополнение", stars, comment
                     )
                     user_gender = sheet_repo.getUserGender(selected_user_id)
-                    message = await get_random_notification_message(stars, comment, selected_user_id, user_gender)
+                    message = await get_random_notification_message(stars, comment, user_gender)
                     await context.bot.send_message(
                         chat_id=selected_user_id, text=message
                     )
@@ -423,9 +423,14 @@ def enter_comment(operation: str):
                     )
                 dec_stars = await decline_stars_message(stars)
                 new_dec_stars = await decline_stars_message(new_stars)
-                await update.message.reply_text(
-                    f"{"Добавлено" if operation == "add" else "Списано"} {stars} {dec_stars} у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
-                )
+                if stars == 1:
+                    await update.message.reply_text(
+                        f"{"Добавлена" if operation == "add" else "Списано"} 1 звезда у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
+                    )
+                else:
+                    await update.message.reply_text(
+                        f"{"Добавлено" if operation == "add" else "Списано"} {stars} {dec_stars} у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
+                    )
                 return ConversationHandler.END
 
         await update.message.reply_text("Подросток не найден.")
@@ -536,7 +541,6 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dec_stars_list = await decline_stars_message(stars)
             await query.edit_message_text(
                 f"У подростка {name} {lastname} {stars} {dec_stars_list}."
-                # Тут можно сделать цикл для добавления коментариев операций к сообщению
             )
             return
 
@@ -745,10 +749,10 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
 import random
 
 def decline_text_by_number(value: int, text1: str, text2to4: str, textMore: str) -> str:
+    """Склоняет слова в зависимости от числа"""
     if 11 <= value % 100 <= 19:
         return textMore
     last_digit = value % 10
-
     if last_digit == 1:
         return text1
     elif 2 <= last_digit <= 4:
@@ -756,9 +760,8 @@ def decline_text_by_number(value: int, text1: str, text2to4: str, textMore: str)
     else:
         return textMore
 
-
-async def get_random_notification_message(stars: int, comment: str, selected_user_id: int, user_gender: str):
-    # Формы для глаголов и существительных
+async def get_random_notification_message(stars: int, comment: str, user_gender: str):
+    # Определяем формы по полу
     if user_gender == "Женский":
         verb_forms = ("получила", "получила", "получила")
         caught_forms = ("поймала", "поймала", "поймала")
@@ -768,26 +771,28 @@ async def get_random_notification_message(stars: int, comment: str, selected_use
         caught_forms = ("поймал", "поймал", "поймал")
         compliment = "Красавчик!"
 
+    # Склонение слова "звезда" в винительном падеже
+    stars_accusative = decline_text_by_number(stars, "звезду", "звезды", "звёзд")
+
     # Формы для фразы с "упала звезда" (именительный падеж)
     fall_forms = (
-        f"упала 1 звезда", 
-        f"упали {stars} звезды", 
-        f"упало {stars} звёзд"
+        f"упала {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}",
+        f"упали {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}",
+        f"упало {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}"
     )
 
-    # Формы для остальных случаев (винительный падеж)
-    stars_accusative = decline_text_by_number(stars, "звезду", "звезды", "звёзд")
-    stars_nominative = decline_text_by_number(stars, "звезда", "звезды", "звёзд")
-    
     NOTIFICATION_MESSAGES = [
         f"🚀 Круто! Ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative} за то, что ты {comment}. {compliment}",
         f"🌟 Бум! На твой счёт {decline_text_by_number(stars, *fall_forms)} за то, что ты {comment}. Продолжай сиять!",
-        f"💫 Эй, звёздный герой! За то, что ты {comment}, тебе {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}. Так держать!",
+        f"💫 Эй, звёздный герой! За то, что ты {comment}, ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}. Так держать!",
         f"🌠 Ты только что {decline_text_by_number(stars, *caught_forms)} {stars} {stars_accusative} за то, что ты {comment}. {compliment}",
         f"✨ Вау! За то, что ты {comment}, ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}! {compliment}",
     ]
-    
-    return random.choice(NOTIFICATION_MESSAGES)
+    rand = random.choice(NOTIFICATION_MESSAGES)
+    if user_gender == "Женский" and "звёздный герой!" in rand:
+        rand = f"💫 Эй, звёздная героиня! За то, что ты {comment}, ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}. Так держать!"
+        return rand
+    return rand
 
 
 async def decline_stars_message(stars: int) -> str:
