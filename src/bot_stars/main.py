@@ -10,11 +10,11 @@ from telegram.ext import (
     filters,
     ConversationHandler,
     Application,
-    MessageHandler,
     CallbackQueryHandler,
 )
 from telegram.warnings import PTBUserWarning
 from .commands import (
+    handle_menu,
     start,
     enter_stars,
     get_phone,
@@ -149,6 +149,7 @@ def main():
     app.add_handler(rem_stars_handler)
     app.add_handler(CommandHandler("viewstars", viewstars))
     app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
     app.run_polling()
 
 

@@ -11,7 +11,24 @@ from telegram.ext import ConversationHandler, ContextTypes, CallbackQueryHandler
 from datetime import datetime
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from datetime import datetime
-from bot_stars.utils import getSheetRepository
+from bot_stars.keyboards import (
+    ADMIN_MENU_KEYBOARD,
+    BTN_ADMIN_ADDSTARS,
+    BTN_ADMIN_BLOCK,
+    BTN_ADMIN_LIST,
+    BTN_ADMIN_REMSTARS,
+    BTN_ADMIN_UNBLOCK,
+    BTN_ASK,
+    BTN_BALANCE,
+    BTN_HELP,
+    MAIN_MENU_KEYBOARD,
+)
+from bot_stars.utils import (
+    decline_stars_message,
+    decline_text_by_number,
+    format_date,
+    getSheetRepository,
+)
 import random
 
 # morph = pymorphy2.MorphAnalyzer()
@@ -39,12 +56,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         if user_id in admin_ids:
             await update.message.reply_text(
-                f"Ты администратор, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars",
+                f"Ты администратор, команды для тебя:",
                 parse_mode="Markdown",
+                reply_markup=ADMIN_MENU_KEYBOARD,
             )
             return
-        
-        await update.message.reply_text("Используй /viewstars")
+
+        await update.message.reply_text(
+            "Используй кнопки ниже:", reply_markup=MAIN_MENU_KEYBOARD
+        )
         return ConversationHandler.END
 
     context.user_data["user_id"] = user_id
@@ -66,6 +86,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return NAME
 
 
+def handle_menu(update, context):
+    text = update.message.text
+
+    if text == BTN_BALANCE:
+        return viewstars(update, context)
+    elif text == BTN_HELP:
+        return help_command(update, context)
+    elif text == BTN_ASK:
+        return ask_question(update, context)
+    elif text == BTN_ADMIN_LIST:
+        return list_users(update, context)
+    # elif text == BTN_ADMIN_ADDSTARS:
+    #     return add_stars(update, context)
+    # elif text == BTN_ADMIN_REMSTARS:
+    #     return remstars(update, context)
+    elif text == BTN_ADMIN_BLOCK:
+        return block_user(update, context)
+    elif text == BTN_ADMIN_UNBLOCK:
+        return unblock_user(update, context)
+    else:
+        update.message.reply_text("Пожалуйста, выбери вариант из меню.")
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Если у вас есть вопросы, напишите @pulatovman или используйте кнопку 'Задать вопрос'."
+    )
+
+
+async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Пожалуйста, напишите ваш вопрос, и мы постараемся ответить на него как можно быстрее."
+    )
+    return ConversationHandler.END
+
+
 async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     sheet_repo = getSheetRepository(context)
@@ -85,21 +141,26 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stars = row[6] if row[6] else "0"
             break
 
-    comments = sheet_repo.get_last_comments(int(user_id), limit=10)
-    comments = comments[::-1]
+    operations = sheet_repo.get_last_comments(int(user_id), limit=5)
+    operations = operations[::-1]
 
-    message = f"Ваше количество звёзд: {stars}\n\nПоследние операции:\n"
-    for comment in comments:
-        operation_type = comment[1]  # Колонка "Тип операции"
-        stars = int(comment[2])  # Колонка "Звёзды"
-        comment_text = comment[3]  # Колонка "Комментарий"
-        datetime = comment[4]  # Колонка "Дата и время"
-        dec_stars = await decline_stars_message(stars)
-        message += (
-            f"{operation_type} {stars} {dec_stars}: {comment_text} ({datetime})\n"
-        )
+    stars_text = decline_stars_message(int(stars))
 
-    await update.message.reply_text(message)
+    lines = []
+    lines.append(f"✨ <b>Твой баланс:</b> {stars} {stars_text}\n")
+    lines.append("📜 <b>Последние операции:</b>\n")
+    for operation in operations:
+        operation_type = operation[1]  # Колонка "Тип операции"
+        amount = int(operation[2])  # Колонка "Звёзды"
+        comment = operation[3]  # Колонка "Комментарий"
+        datetime_str = operation[4]  # Колонка "Дата и время"
+        symbol = "➕" if operation_type == "Пополнение" else "➖"
+        lines.append(f"{symbol} <b>{amount}</b> — {comment}")
+        lines.append(f"🗓 {format_date(datetime_str)}\n")
+
+    lines.append("ℹ️ Эти звезды ты сможешь обменять на реальные призы в день ярмарки!")
+    message = "\n".join(lines)
+    await update.message.reply_text(message, parse_mode="HTML")
 
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -194,9 +255,7 @@ async def get_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         sent_message = await update.message.reply_text(
             "Выберите ваш пол:",
             reply_markup=ReplyKeyboardMarkup(
-                reply_keyboard, 
-                resize_keyboard=True,
-                one_time_keyboard=True
+                reply_keyboard, resize_keyboard=True, one_time_keyboard=True
             ),
         )
         context.user_data["last_bot_message_id"] = sent_message.message_id
@@ -209,11 +268,12 @@ async def get_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         context.user_data["last_bot_message_id"] = sent_message.message_id
         return BIRTHDATE
 
+
 async def get_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     gender_str = update.message.text
     if gender_str == "Отменить":
         return await cancel(update, context)
-    
+
     if gender_str not in ["Мужской", "Женский"]:  # Исправлено здесь
         sent_message = await update.message.reply_text(
             "Пожалуйста, выберите пол, используя кнопки ниже."
@@ -238,8 +298,7 @@ async def get_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard, one_time_keyboard=True, resize_keyboard=True
     )
     sent_message = await update.message.reply_text(
-        "Отлично! Теперь отправь свой номер телефона:", 
-        reply_markup=reply_markup
+        "Отлично! Теперь отправь свой номер телефона:", reply_markup=reply_markup
     )
     context.user_data["last_bot_message_id"] = sent_message.message_id
     return PHONE
@@ -254,7 +313,9 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     # Получаем номер телефона
     phone_number = (
-        update.message.contact.phone_number if update.message.contact else update.message.text
+        update.message.contact.phone_number
+        if update.message.contact
+        else update.message.text
     )
     context.user_data["phone"] = phone_number
 
@@ -273,15 +334,31 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     if gender == "Мужской":
         if user_id in admin_ids:
-            await update.message.reply_text(f"Ты успешно зарегистрирован, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars" ,parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+            await update.message.reply_text(
+                f"Ты успешно зарегистрирован, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
         else:
-            await update.message.reply_text(f"Ты успешно зарегистрирован, для просмотра звёзд используй /viewstars",parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+            await update.message.reply_text(
+                f"Ты успешно зарегистрирован, для просмотра звёзд используй /viewstars",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
     elif gender == "Женский":
         if user_id in admin_ids:
-            await update.message.reply_text(f"Ты успешно зарегистрирована, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars",parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+            await update.message.reply_text(
+                f"Ты успешно зарегистрирована, команды для тебя: \n**1.** /list \n**2.** /addstars \n**3.** /remstars \n**4.** /block \n**5.** /unblock \n**6.** /viewstars",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
         else:
-            await update.message.reply_text(f"Ты успешно зарегистрирована, для просмотра звёзд используй /viewstars",parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
-    
+            await update.message.reply_text(
+                f"Ты успешно зарегистрирована, для просмотра звёзд используй /viewstars",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+
     context.user_data.clear()
     context.user_data["in_dialog"] = False
     return ConversationHandler.END
@@ -413,7 +490,9 @@ def enter_comment(operation: str):
                         int(selected_user_id), "Пополнение", stars, comment
                     )
                     user_gender = sheet_repo.getUserGender(selected_user_id)
-                    message = await get_random_notification_message(stars, comment, user_gender)
+                    message = await get_random_notification_message(
+                        stars, comment, user_gender
+                    )
                     await context.bot.send_message(
                         chat_id=selected_user_id, text=message
                     )
@@ -421,8 +500,8 @@ def enter_comment(operation: str):
                     sheet_repo.add_comment_to_sheet2(
                         int(selected_user_id), "Списание", stars, comment
                     )
-                dec_stars = await decline_stars_message(stars)
-                new_dec_stars = await decline_stars_message(new_stars)
+                dec_stars = decline_stars_message(stars)
+                new_dec_stars = decline_stars_message(new_stars)
                 if stars == 1:
                     await update.message.reply_text(
                         f"{"Добавлена" if operation == "add" else "Списано"} 1 звезда у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
@@ -538,7 +617,7 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stars = int(
                 row[6] if len(row) > 6 and row[6] else "0"
             )  # Колонка L (Stars), если пусто, то 0
-            dec_stars_list = await decline_stars_message(stars)
+            dec_stars_list = decline_stars_message(stars)
             await query.edit_message_text(
                 f"У подростка {name} {lastname} {stars} {dec_stars_list}."
             )
@@ -748,17 +827,6 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
 
 import random
 
-def decline_text_by_number(value: int, text1: str, text2to4: str, textMore: str) -> str:
-    """Склоняет слова в зависимости от числа"""
-    if 11 <= value % 100 <= 19:
-        return textMore
-    last_digit = value % 10
-    if last_digit == 1:
-        return text1
-    elif 2 <= last_digit <= 4:
-        return text2to4
-    else:
-        return textMore
 
 async def get_random_notification_message(stars: int, comment: str, user_gender: str):
     # Определяем формы по полу
@@ -778,7 +846,7 @@ async def get_random_notification_message(stars: int, comment: str, user_gender:
     fall_forms = (
         f"упала {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}",
         f"упали {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}",
-        f"упало {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}"
+        f"упало {stars} {decline_text_by_number(stars, 'звезда', 'звезды', 'звёзд')}",
     )
 
     NOTIFICATION_MESSAGES = [
@@ -793,7 +861,3 @@ async def get_random_notification_message(stars: int, comment: str, user_gender:
         rand = f"💫 Эй, звёздная героиня! За то, что ты {comment}, ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}. Так держать!"
         return rand
     return rand
-
-
-async def decline_stars_message(stars: int) -> str:
-    return decline_text_by_number(stars, "звезду", "звезды", "звёзд")
