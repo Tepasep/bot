@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:a9c153723d97c0d42b639adfd4a90015b8cb9f3a329babfc811ac2155065c361"
+content_hash = "sha256:6f3aa3f241ad01d0167feb23c73a888de429e99e6c1c92dad999ba0d0b35eb00"
 
 [[metadata.targets]]
 requires_python = ">=3.13"
@@ -399,7 +399,7 @@ files = [
 
 [[package]]
 name = "python-telegram-bot"
-version = "21.11.1"
+version = "22.0"
 requires_python = ">=3.9"
 summary = "We have made you a wrapper you can't refuse"
 groups = ["default"]
@@ -407,8 +407,8 @@ dependencies = [
     "httpx~=0.27",
 ]
 files = [
-    {file = "python_telegram_bot-21.11.1-py3-none-any.whl", hash = "sha256:17f933a7a0569f519d9b672e06d71c29ab3688f1ec575ba59a3ca37922481113"},
-    {file = "python_telegram_bot-21.11.1.tar.gz", hash = "sha256:2abda5202f27a838f35e8140e5292af0f4f8fad6c2e5123b2defadd5f4e8ca02"},
+    {file = "python_telegram_bot-22.0-py3-none-any.whl", hash = "sha256:23237f778655e634f08cfebbada96ed3692c2bdd3c20c122e90a6d606d6a4516"},
+    {file = "python_telegram_bot-22.0.tar.gz", hash = "sha256:acf86f28d86d81cab736177d2988e5bcb27f2248137efd62e02c46e9ba1fe44c"},
 ]
 
 [[package]]

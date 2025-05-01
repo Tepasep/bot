@@ -18,11 +18,13 @@ from bot_stars.keyboards import (
     BTN_ADMIN_LIST,
     BTN_ADMIN_REMSTARS,
     BTN_ADMIN_UNBLOCK,
-    BTN_ASK,
     BTN_BALANCE,
     BTN_HELP,
+    BTN_TOP,
     MAIN_MENU_KEYBOARD,
+    BTN_ADMIN_QUESTIONS,
 )
+
 from bot_stars.utils import (
     decline_stars_message,
     decline_text_by_number,
@@ -31,7 +33,6 @@ from bot_stars.utils import (
 )
 import random
 
-# morph = pymorphy2.MorphAnalyzer()
 
 NAME, LASTNAME, BIRTHDATE, GENDER, PHONE = range(5)
 SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
@@ -88,13 +89,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 def handle_menu(update, context):
     text = update.message.text
+    user_data = context.user_data
+
+    if user_data.get('awaiting_question'):
+        return save_question(update, context)
 
     if text == BTN_BALANCE:
         return viewstars(update, context)
     elif text == BTN_HELP:
         return help_command(update, context)
-    elif text == BTN_ASK:
-        return ask_question(update, context)
     elif text == BTN_ADMIN_LIST:
         return list_users(update, context)
     # elif text == BTN_ADMIN_ADDSTARS:
@@ -105,22 +108,219 @@ def handle_menu(update, context):
         return block_user(update, context)
     elif text == BTN_ADMIN_UNBLOCK:
         return unblock_user(update, context)
+    elif text == BTN_TOP:
+        return top(update, context)
+    elif text == BTN_ADMIN_QUESTIONS:
+        return show_active_questions(update, context)
     else:
-        update.message.reply_text("Пожалуйста, выбери вариант из меню.")
+        return for_handle_menu(update, context)
+    
+async def for_handle_menu(update, context):
+    await update.message.reply_text("Пожалуйста, выбери вариант из меню.")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    context.user_data['awaiting_question'] = True
     await update.message.reply_text(
-        "Если у вас есть вопросы, напишите @pulatovman или используйте кнопку 'Задать вопрос'."
+        "Напишите ваш вопрос, и мы постараемся ответить на него как можно быстрее."
     )
+    return "AWAITING_QUESTION"
 
+async def save_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    question = update.message.text
 
-async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Пожалуйста, напишите ваш вопрос, и мы постараемся ответить на него как можно быстрее."
-    )
+    repo = context.bot_data.get('sheet_repository')
+    if not repo:
+        print("репозиторий не доступен")
+        return ConversationHandler.END
+    
+    # Получаем последний ID вопроса
+    try:
+        questions = repo.sheet3.get_all_records()
+        last_id = max([q['Id'] for q in questions]) if questions else 0
+        new_id = last_id + 1
+    except Exception as e:
+        new_id = 1
+    
+    # Сохраняем вопрос
+    new_question = {
+        'Id': new_id,
+        'user_id': user.id,
+        'question': question,
+        'status': 'Активный'
+    }
+    repo.sheet3.append_row(list(new_question.values()))
+    
+    await update.message.reply_text("Спасибо за ваш вопрос! Мы ответим вам как можно скорее.")
+    
+    # Уведомляем админов
+    await notify_admins(context.bot, new_id, question, user)
+    
     return ConversationHandler.END
 
+async def notify_admins(bot, question_id, question_text, user):
+    admin_ids = os.getenv("ADMIN_ID", "").split(",")
+    if not admin_ids or not admin_ids[0]:
+        print("ОШИБКА: ADMIN_ID не задан в .env файле")
+        return
+
+    success = False
+    for admin_id in admin_ids:
+        try:
+            admin_id = admin_id.strip()
+            if not admin_id.isdigit():
+                print(f"Некорректный ADMIN_ID: {admin_id}")
+                continue
+                
+            await bot.send_message(
+                chat_id=int(admin_id),
+                text=f"❓ Новый вопрос #{question_id}\n"
+                     f"👤 От: {user.first_name} {user.last_name or ''}\n"
+                     f"📝 Вопрос: {question_text}\n\n"
+            )
+            success = True
+        except Exception as e:
+            print(f"ошибка при отправке уведомления админу {admin_id}: {e}")
+
+    return success
+
+
+async def show_active_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        repo = context.bot_data['sheet_repository']
+        questions = repo.sheet3.get_all_records()
+        active_questions = [q for q in questions if str(q.get('status', '')).lower() == 'активный']
+        
+        if not active_questions:
+            await update.message.reply_text("Нет активных вопросов")
+            return ConversationHandler.END
+
+        users = repo.sheet1.get_all_records()
+        user_dict = {}
+        for user in users:
+            user_id = str(user.get('id') or user.get('Id') or user.get('user_id'))
+            if user_id:
+                name = str(user.get('name', '')).strip()
+                lastname = str(user.get('lastname', '')).strip()
+                user_dict[user_id] = f"{name} {lastname}" if name and lastname else name or lastname or "Аноним"
+
+        buttons = []
+        for question in active_questions:
+            user_id = str(question.get('user_id', ''))
+            username = user_dict.get(user_id, f"ID:{user_id}")
+            btn_text = f"#{question.get('Id')} от {username[:15]}"
+            buttons.append([InlineKeyboardButton(btn_text, callback_data=f"q_{question.get('Id')}")])
+
+        buttons.append([InlineKeyboardButton("❌ Отменить", callback_data="q_cancel")])
+
+        await update.message.reply_text(
+            "📋 Активные вопросы:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        
+        context.user_data['active_questions'] = {q['Id']: q for q in active_questions}
+        context.user_data['user_dict'] = user_dict  # Сохраняем user_dict в контекст
+        return "HANDLE_QUESTION"
+
+    except Exception as e:
+        print(f"ERROR in show_active_questions: {e}")
+        await update.message.reply_text("Ошибка загрузки вопросов")
+        return ConversationHandler.END
+    
+async def handle_question_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    question_id = int(query.data.split('_')[-1])
+    questions = context.user_data.get('active_questions', [])
+    
+    selected = next((q for q in questions if q.get('Id') == question_id), None)
+    if not selected:
+        await query.edit_message_text("Вопрос не найден")
+        return ConversationHandler.END
+    
+    context.user_data['selected_question'] = selected
+    await query.edit_message_text(
+        f"Выбран вопрос #{selected.get('Id')}:\n"
+        f"{selected.get('question')}\n\n"
+        "Введите ваш ответ:"
+    )
+    return "AWAITING_ANSWER"
+
+async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'q_cancel':
+        await query.edit_message_text("Выбор отменен")
+        return ConversationHandler.END
+
+    try:
+        question_id = int(query.data.split('_')[1])
+        questions = context.user_data.get('active_questions', {})
+        user_dict = context.user_data.get('user_dict', {})  
+        question = questions.get(question_id)
+        
+        if not question:
+            await query.edit_message_text("Вопрос не найден")
+            return ConversationHandler.END
+
+        context.user_data['selected_question'] = question
+        await query.edit_message_text(
+            f"✉️ Вопрос #{question_id}\n"
+            f"👤 От: {user_dict.get(str(question.get('user_id')), 'Неизвестно')}\n\n"
+            f"📝 {question.get('question')}\n\n"
+            "Введите ваш ответ:"
+        )
+        return "HANDLE_ANSWER"
+
+    except Exception as e:
+        print(f"ERROR in handle_question: {e}")
+        await query.edit_message_text("Ошибка обработки")
+        return ConversationHandler.END
+
+async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        answer = update.message.text
+        question = context.user_data['selected_question']
+        repo = context.bot_data['sheet_repository']
+        
+        await context.bot.send_message(
+            chat_id=question['user_id'],
+            text=f"Ответ на ваш вопрос #{question['Id']}:\n\n{answer}"
+        )
+        
+        for i, q in enumerate(repo.sheet3.get_all_records(), 2):
+            if q['Id'] == question['Id']:
+                repo.sheet3.update_cell(i, 4, 'Закрыт')
+                break
+
+        await update.message.reply_text("✅ Ответ отправлен")
+        return ConversationHandler.END
+
+    except Exception as e:
+        print(f"ERROR in handle_answer: {e}")
+        await update.message.reply_text("Ошибка отправки ответа")
+        return ConversationHandler.END
+    
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Действие отменено.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ConversationHandler.END
+async def cancel_question_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        await query.edit_message_text("Выбор вопроса отменен")
+        return ConversationHandler.END
+    except Exception as e:
+        print(f"Ошибка в cancel_question_select: {e}")
+        return ConversationHandler.END
 
 async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -154,7 +354,8 @@ async def viewstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = int(operation[2])  # Колонка "Звёзды"
         comment = operation[3]  # Колонка "Комментарий"
         datetime_str = operation[4]  # Колонка "Дата и время"
-        symbol = "➕" if operation_type == "Пополнение" else "➖"
+        if operation_type == "Пополнение": symbol = "➕"
+        else: symbol = "➖"
         lines.append(f"{symbol} <b>{amount}</b> — {comment}")
         lines.append(f"🗓 {format_date(datetime_str)}\n")
 
@@ -861,3 +1062,52 @@ async def get_random_notification_message(stars: int, comment: str, user_gender:
         rand = f"💫 Эй, звёздная героиня! За то, что ты {comment}, ты {decline_text_by_number(stars, *verb_forms)} {stars} {stars_accusative}. Так держать!"
         return rand
     return rand
+
+async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        current_user_id = update.message.from_user.id
+        sheet_repo = getSheetRepository(context)
+        data = sheet_repo.sheet1.get_all_values()
+
+        current_user_in_top = False
+        current_user_data = None
+        stars_list =[]
+        for row in data[1:]:
+            try:
+                user_id = int(row[0])
+                user = str(row[1]) + ' ' + str(row[2])  # user
+                stars = int(row[6])        # stars
+                entry = (user_id, user, stars)
+                stars_list.append(entry)
+
+                if user_id == current_user_id:
+                    current_user_data = entry
+            except (IndexError, ValueError) as e:
+                print(f"Ошибка в строке {row}: {e}")
+                continue
+
+        if not stars_list:
+            await update.message.reply_text("ℹ️ Нет данных о звёздах")
+            return
+
+        sorted_users = sorted(stars_list, key=lambda x: x[2], reverse=True)
+        
+        message = ["🏆 Топ по звёздам:"]
+        
+        # Топ
+        top_users = sorted_users[:5]
+        for i, (user_id, user_name, stars) in enumerate(top_users, 1):
+            # Проверяем, есть ли текущий пользователь в топе
+            if user_id == current_user_id:
+                current_user_in_top = True
+            message.append(f"{i}. {user_name} — {stars} ⭐")
+        
+        # Показываем место пользователя
+        if current_user_data and not current_user_in_top:
+            user_place = sorted_users.index(current_user_data) + 1
+            message.append(f"... \n{user_place}. {current_user_data[1]} — {current_user_data[2]} ⭐")
+        
+        await update.message.reply_text("\n".join(message))
+
+    except Exception as e:
+        await update.message.reply_text("⚠️ Произошла ошибка.")

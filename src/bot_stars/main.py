@@ -45,7 +45,15 @@ from .commands import (
     enter_comment,
     GENDER,
     get_gender,
+    top,
+    help_command,
+    cancel_command,
+    handle_answer,
+    save_question,
+    show_active_questions,
+    handle_question_select,
 )
+
 
 warnings.filterwarnings("ignore", category=PTBUserWarning)
 
@@ -72,6 +80,26 @@ def main():
 
     # Сохранение repository в bot_data
     app.bot_data["sheet_repository"] = sheet_repository
+
+    # вопросы
+    def setup_handlers(app):
+        help_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('help', help_command)],
+            states={
+                "AWAITING_QUESTION": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_question)],
+            },
+            fallbacks=[CommandHandler('cancel', cancel_command)],
+        )
+        admin_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('active_questions', show_active_questions)],
+            states={
+                "HANDLE_QUESTION": [CallbackQueryHandler(handle_question_select, pattern="^(question_|cancel_questions)")],
+                "HANDLE_ANSWER": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer)],},
+            fallbacks=[CommandHandler('cancel', cancel_command)],
+        )
+    
+        app.add_handler(help_conv_handler)
+        app.add_handler(admin_conv_handler)
 
     # ConversationHandler для /start
     conv_handler = ConversationHandler(
@@ -150,6 +178,7 @@ def main():
     app.add_handler(CommandHandler("viewstars", viewstars))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
+    app.add_handler(CommandHandler("top", top))
     app.run_polling()
 
 

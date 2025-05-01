@@ -6,7 +6,7 @@ authors = [
     {name = "Your Name",email = "you@example.com"}
 ]
 dependencies = [
-    "python-telegram-bot>=21.10",
+    "python-telegram-bot>=22.0",
     "python-dotenv>=1.0.1",
     "rushdb>=0.3.0",
     "gspread>=6.2.0",
