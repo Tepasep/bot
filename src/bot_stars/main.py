@@ -13,6 +13,7 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from telegram.warnings import PTBUserWarning
+from .keyboards import BTN_HELP
 from .commands import (
     handle_menu,
     start,
@@ -46,12 +47,12 @@ from .commands import (
     GENDER,
     get_gender,
     top,
-    help_command,
-    cancel_command,
+    handle_user_question,
+    handle_admin_actions,
+    active_questions,
     handle_answer,
-    save_question,
-    show_active_questions,
-    handle_question_select,
+    ANSWER_INPUT,
+    start_question_flow,
 )
 
 
@@ -80,26 +81,26 @@ def main():
 
     # Сохранение repository в bot_data
     app.bot_data["sheet_repository"] = sheet_repository
-
-    # вопросы
-    def setup_handlers(app):
-        help_conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('help', help_command)],
-            states={
-                "AWAITING_QUESTION": [MessageHandler(filters.TEXT & ~filters.COMMAND, save_question)],
-            },
-            fallbacks=[CommandHandler('cancel', cancel_command)],
-        )
-        admin_conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('active_questions', show_active_questions)],
-            states={
-                "HANDLE_QUESTION": [CallbackQueryHandler(handle_question_select, pattern="^(question_|cancel_questions)")],
-                "HANDLE_ANSWER": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer)],},
-            fallbacks=[CommandHandler('cancel', cancel_command)],
-        )
     
-        app.add_handler(help_conv_handler)
-        app.add_handler(admin_conv_handler)
+    #Вопросы
+    app.add_handler(ConversationHandler(
+        entry_points=[MessageHandler(filters.Text([BTN_HELP]), start_question_flow)],
+        states={
+            "HANDLING_QUESTION": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+        ))
+    
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler('active_questions', active_questions),
+                     CallbackQueryHandler(handle_admin_actions)],
+        states={
+            ANSWER_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+        ))
+    
+    app.add_handler(CallbackQueryHandler(handle_admin_actions))
 
     # ConversationHandler для /start
     conv_handler = ConversationHandler(

@@ -88,39 +88,77 @@ class SheetsRepository:
         if cell:
             return self.sheet1.cell(cell.row, 8).value
 
-    def add_question(self, user_id: str, question: str) -> int:
-        if not self.sheet3.row_values(1):
-            self.sheet3.append_row(["Id", "user_id", "question", "status"])
+    def get_user_info(self, user_id: str):
+        cell = self.sheet1.find(str(user_id))
+        if cell:
+            return {
+                'name': self.sheet1.cell(cell.row, 2).value,
+                'lastname': self.sheet1.cell(cell.row, 3).value,
+                'username': self.sheet1.cell(cell.row, 1).value
+            }
+        return None
 
-        existing_ids = [int(id) for id in self.sheet3.col_values(1)[1:] if id.isdigit()]
-        new_id = max(existing_ids) + 1 if existing_ids else 1
-        
-        self.sheet3.append_row([new_id, user_id, question, "Активный"])
-        return new_id
-
-    def get_active_questions(self) -> list:
+    def add_question(self, user_id: str, question_text: str) -> int:
         try:
-            questions = self.sheet3.get_all_records()
-            return [q for q in questions if q.get("status") == "Активный"]
+            if not self.sheet3.row_values(1):
+                self.sheet3.append_row([
+                    'Id', 'user_id', 'name', 'lastname', 
+                    'question', 'answer', 'status'
+                ])
+            next_id = self.get_next_question_id()
+            user_info = self.get_user_info(user_id)
+            self.sheet3.append_row([
+                next_id,
+                user_id,
+                user_info.get('name', ''),
+                user_info.get('lastname', ''),
+                question_text,
+                '',  # answer
+                'Активный'  # status
+            ])
+            return next_id
         except Exception as e:
+            print(f"ошибка в add_quesion: {e}")
+            return -1
+
+    def get_next_question_id(self) -> int:
+        try:
+            ids = self.sheet3.col_values(1)
+            return len(ids) if not ids else int(ids[-1]) + 1
+        except Exception as e:
+            print(f"ошибка в айди вопроса: {e}")
+            return 1
+
+    def get_active_questions(self):
+        all_data = self.sheet3.get_all_values()
+        if len(all_data) < 2:
             return []
+        headers = all_data[0]
+        rows = all_data[1:]
 
-    def get_user_info(self, user_id: str) -> dict:
-        try:
-            cell = self.sheet1.find(str(user_id))
-            if cell:
-                return {
-                    "name": self.sheet1.cell(cell.row, 2).value,
-                    "lastname": self.sheet1.cell(cell.row, 3).value
+        questions = []
+        for row in rows:
+            if len(row) >= 7 and row[6] == 'Активный':
+                question = {
+                    'Id': row[0],
+                    'user_id': row[1],
+                    'name': row[2],
+                    'lastname': row[3],
+                    'question': row[4],
+                    'answer': row[5],
+                    'status': row[6]
                 }
-            return None
-        except Exception as e:
-            return None
+                questions.append(question)
+        return questions
 
-    def close_question(self, question_id: int):
+    def update_question(self, question_id: int, answer: str, status: str):
         try:
             cell = self.sheet3.find(str(question_id), in_column=1)
-            if cell:
-                self.sheet3.update_cell(cell.row, 4, "Закрыт")
+            if cell and cell.row > 1:
+                self.sheet3.update_cell(cell.row, 6, answer)  # answer
+                self.sheet3.update_cell(cell.row, 7, status)   # status
+                return True
+            return False
         except Exception as e:
-            print('ошибка в закрытии вопроса')
+            print(f"update_questions repository.py: {e}")
+            return False
