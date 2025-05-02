@@ -53,6 +53,7 @@ from .commands import (
     handle_answer,
     ANSWER_INPUT,
     start_question_flow,
+    remove_keyboard,
 )
 
 
@@ -179,7 +180,6 @@ def main():
     app.add_handler(CommandHandler("viewstars", viewstars))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
-    app.add_handler(CommandHandler("top", top))
     app.run_polling()
 
 

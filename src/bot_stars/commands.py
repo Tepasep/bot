@@ -6,6 +6,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+import random
 import os
 from telegram.ext import ConversationHandler, ContextTypes, CallbackQueryHandler
 from datetime import datetime
@@ -31,12 +32,49 @@ from bot_stars.utils import (
     format_date,
     getSheetRepository,
 )
-import random
 
 
 NAME, LASTNAME, BIRTHDATE, GENDER, PHONE = range(5)
 SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
 ANSWER_INPUT, REJECT_CONFIRMATION = range(2)
+
+# Клавиатура
+async def send_menu_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, admin_ids: list):
+    if user_id in admin_ids:
+        await update.message.reply_text(
+            "Используй команды ниже:",
+            parse_mode="Markdown",
+            reply_markup=ADMIN_MENU_KEYBOARD
+        )
+    else:
+        await update.message.reply_text(
+            "Используй кнопки ниже:",
+            reply_markup=MAIN_MENU_KEYBOARD
+        )
+    return ConversationHandler.END
+async def replace_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    cancel_keyboard = ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True)
+    await update.message.reply_text(
+        text=text,
+        reply_markup=cancel_keyboard
+    )
+    # метка 
+    context.user_data['awaiting_cancel'] = True
+
+async def remove_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    admin_ids_str = os.getenv("ADMIN_ID")
+    admin_ids_str = admin_ids_str.replace('"', "").replace("'", "")
+    admin_ids = [int(id.strip()) for id in admin_ids_str.split(",")]
+    if update.message.text == "❌ Отмена":
+        await update.message.reply_text(
+            "Действие отменено",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        context.user_data.pop('awaiting_cancel', None)
+
+        await send_menu_keyboard(update, context, user_id, admin_ids)
+        return ConversationHandler.END
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -57,16 +95,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.message.from_user.id
 
         if user_id in admin_ids:
-            await update.message.reply_text(
-                f"Ты администратор, команды для тебя:",
-                parse_mode="Markdown",
-                reply_markup=ADMIN_MENU_KEYBOARD,
-            )
+            await send_menu_keyboard(update, context, user_id, admin_ids)
             return
 
-        await update.message.reply_text(
-            "Используй кнопки ниже:", reply_markup=MAIN_MENU_KEYBOARD
-        )
+        await send_menu_keyboard(update, context, user_id, admin_ids)
         return ConversationHandler.END
 
     context.user_data["user_id"] = user_id
@@ -93,6 +125,9 @@ async def handle_menu(update, context):
     user_data = context.user_data
     if user_data.get('answering_question'):
         return None
+    if text == "❌ Отмена":
+        await remove_keyboard(update, context)
+        return ConversationHandler.END
 
     if text == BTN_BALANCE:
         return await viewstars(update, context)
@@ -100,8 +135,8 @@ async def handle_menu(update, context):
         return await start_question_flow(update, context)
     elif text == BTN_ADMIN_LIST:
         return await list_users(update, context)
-    #elif text == BTN_ADMIN_ADDSTARS:
-    #    return await add_stars(update, context)
+    elif text == BTN_ADMIN_ADDSTARS:
+        return await add_stars(update, context)
     #elif text == BTN_ADMIN_REMSTARS:
     #    return await remstars(update, context)
     elif text == BTN_ADMIN_BLOCK:
@@ -114,6 +149,11 @@ async def handle_menu(update, context):
         return await active_questions(update, context)
     else:
         await update.message.reply_text("Выбери вариант из меню.")
+
+async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "Выбери подростка"
+    await replace_keyboard(update, context, text)
+
 
 async def start_question_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['awaiting_question'] = True
@@ -906,9 +946,7 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def handle_user_selection_unblock(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
+async def handle_user_selection_unblock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
@@ -967,10 +1005,6 @@ async def handle_confirmation1(update: Update, context: ContextTypes.DEFAULT_TYP
     # Если нажата кнопка "Нет"
     elif query.data == "cancel_unblock":
         await query.edit_message_text("Действие отменено.")
-
-
-import random
-
 
 async def get_random_notification_message(stars: int, comment: str, user_gender: str):
     # Определяем формы по полу
