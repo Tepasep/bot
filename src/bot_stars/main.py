@@ -147,12 +147,15 @@ def main():
             per_message=False,
         )
 
+
     # Handler для /addstars и /remstars
     add_stars_handler = createMoveStarsHandler("addstars", "add")
     rem_stars_handler = createMoveStarsHandler("remstars", "rem")
+    #обработчики 
+    app.add_handler(add_stars_handler)
+    app.add_handler(rem_stars_handler)
 
     # block
-
     app.add_handler(CommandHandler("block", block_user))
     app.add_handler(
         CallbackQueryHandler(handle_user_selection_block, pattern="^block_user_")

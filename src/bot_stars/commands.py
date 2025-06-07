@@ -137,8 +137,8 @@ async def handle_menu(update, context):
         return await list_users(update, context)
     elif text == BTN_ADMIN_ADDSTARS:
         return await add_stars(update, context)
-    #elif text == BTN_ADMIN_REMSTARS:
-    #    return await remstars(update, context)
+    elif text == BTN_ADMIN_REMSTARS:
+        return await remstars(update, context)
     elif text == BTN_ADMIN_BLOCK:
         return await block_user(update, context)
     elif text == BTN_ADMIN_UNBLOCK:
@@ -151,8 +151,22 @@ async def handle_menu(update, context):
         await update.message.reply_text("Выбери вариант из меню.")
 
 async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "Выбери подростка"
-    await replace_keyboard(update, context, text)
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+    if user_id not in admin_ids:
+        return
+    
+    context.user_data['operation'] = 'add'  # Сохраняем тип операции
+    await select_teen(update, context)
+
+async def remstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
+    user_id = update.message.from_user.id
+    if user_id not in admin_ids:
+        return
+    
+    context.user_data['operation'] = 'rem'  # Сохраняем тип операции
+    await select_teen(update, context)
 
 
 async def start_question_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -236,11 +250,14 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     data = query.data
     
+    if data.startswith("select_teen_"):
+        return
+    
     try:
         if data.startswith("answer_"):
             question_id = data.split("_")[1]
             context.user_data['current_question'] = question_id
-            context.user_data['answering_question'] = True # метка что идет ответ
+            context.user_data['answering_question'] = True
             await query.message.reply_text(f"Введите ответ на вопрос #{question_id}:")
             return ANSWER_INPUT
         
@@ -580,7 +597,8 @@ async def select_teen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lastname = row[2]
         if name and lastname and user_id_col:
             button = InlineKeyboardButton(
-                text=f"{name} {lastname}", callback_data=f"select_teen_{user_id_col}"
+                text=f"{name} {lastname}",
+                callback_data=f"select_teen_{user_id_col}"
             )
             keyboard.append([button])
 
@@ -637,7 +655,8 @@ async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def enter_comment(operation: str):
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+        # Получаем тип операции из context.user_data
+        operation = context.user_data.get('operation', 'add')
         comment = update.message.text.lower()
         stars = int(context.user_data["stars"])
         selected_user_id = context.user_data.get("selected_user_id")
@@ -646,6 +665,7 @@ def enter_comment(operation: str):
         COLUMN_NAME = 1
         COLUMN_LASTNAME = 2
         COLUMN_STARS = 6
+        
         try:
             data = sheet_repo.sheet1.get_all_values()
         except Exception as e:
@@ -688,11 +708,11 @@ def enter_comment(operation: str):
                 new_dec_stars = decline_stars_message(new_stars)
                 if stars == 1:
                     await update.message.reply_text(
-                        f"{"Добавлена" if operation == "add" else "Списано"} 1 звезда у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
+                        f"{'Добавлена' if operation == 'add' else 'Списано'} 1 звезда у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
                     )
                 else:
                     await update.message.reply_text(
-                        f"{"Добавлено" if operation == "add" else "Списано"} {stars} {dec_stars} у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
+                        f"{'Добавлено' if operation == 'add' else 'Списано'} {stars} {dec_stars} у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
                     )
                 return ConversationHandler.END
 
@@ -720,16 +740,28 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def handle_teen_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    callback_data = query.data
-    user_id = callback_data.split("_")[-1]
-    context.user_data["selected_user_id"] = user_id
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
-    reply_markup = InlineKeyboardMarkup([[cancel_button]])
-    await query.edit_message_text(
-        "Введите количество звёзд:", reply_markup=reply_markup
-    )
-    return ENTER_STARS
+    await query.answer()  # Это важно для подтверждения нажатия
+    
+    try:
+        # Получаем ID подростка из callback_data
+        teen_id = query.data.split('_')[-1]
+        context.user_data["selected_user_id"] = teen_id
+        
+        # Создаем кнопку отмены
+        keyboard = [[InlineKeyboardButton("Отмена", callback_data="cancel")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Редактируем сообщение вместо отправки нового
+        await query.edit_message_text(
+            text="Введите количество звёзд:",
+            reply_markup=reply_markup
+        )
+        return ENTER_STARS
+    except Exception as e:
+        print(f"Ошибка в handle_teen_selection: {e}")
+        await query.message.reply_text("Произошла ошибка при выборе подростка")
+        return ConversationHandler.END
+
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
