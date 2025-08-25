@@ -30,4 +30,4 @@ test = "pytest tests"
 
 [tool.pdm]
 distribution = true
-package-dir = "src"
+package-dir = "bot/src"

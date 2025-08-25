@@ -37,11 +37,13 @@ class SheetsRepository:
 
         return max(loc_ids) + 1
     
-    def add_comment_to_sheet2(self, loc_id: int, operation: str, stars: int, comment: str):
+    def add_comment_to_sheet2(self, teen_id: str, operation: str, stars: int, comment: str):
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Добавляем новую строку с данными
-        self.sheet2.append_row([loc_id, operation, stars, comment, current_time])
+        try:
+            teen_id_num = int(teen_id)
+        except ValueError:
+            teen_id_num = teen_id
+        self.sheet2.append_row([teen_id_num, operation, stars, comment, current_time])
 
     def saveNewUser(
         self,

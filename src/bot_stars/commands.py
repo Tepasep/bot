@@ -136,9 +136,9 @@ async def handle_menu(update, context):
     elif text == BTN_ADMIN_LIST:
         return await list_users(update, context)
     elif text == BTN_ADMIN_ADDSTARS:
-        return await add_stars(update, context)
+        return await stars_add(update, context)
     elif text == BTN_ADMIN_REMSTARS:
-        return await remstars(update, context)
+        return await stars_remove(update, context)
     elif text == BTN_ADMIN_BLOCK:
         return await block_user(update, context)
     elif text == BTN_ADMIN_UNBLOCK:
@@ -150,24 +150,246 @@ async def handle_menu(update, context):
     else:
         await update.message.reply_text("Выбери вариант из меню.")
 
-async def add_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stars_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
     user_id = update.message.from_user.id
     if user_id not in admin_ids:
         return
     
-    context.user_data['operation'] = 'add'  # Сохраняем тип операции
-    await select_teen(update, context)
+    context.user_data['operation'] = 'add'
+    await stars_show_teens_list(update, context)
+    return SELECT_TEEN
 
-async def remstars(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stars_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
     user_id = update.message.from_user.id
     if user_id not in admin_ids:
         return
     
-    context.user_data['operation'] = 'rem'  # Сохраняем тип операции
-    await select_teen(update, context)
+    context.user_data['operation'] = 'rem'
+    await stars_show_teens_list(update, context)
+    return SELECT_TEEN
 
+async def stars_show_teens_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sheet_repo = getSheetRepository(context)
+    
+    try:
+        data = sheet_repo.sheet1.get_all_values()
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при чтении данных: {e}")
+        return ConversationHandler.END
+    
+    keyboard = []
+    for row in data[1:]:
+        if len(row) >= 3 and row[0] and row[1] and row[2]:
+            user_id = row[0]
+            name = row[1]
+            lastname = row[2]
+            button = InlineKeyboardButton(
+                text=f"{name} {lastname}",
+                callback_data=f"stars_select_teen_{user_id}"
+            )
+            keyboard.append([button])
+    
+    cancel_button = InlineKeyboardButton("❌ Отмена", callback_data="stars_cancel_operation")
+    keyboard.append([cancel_button])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    operation_type = "добавления" if context.user_data.get('operation') == 'add' else "списания"
+    
+    sent_message = await update.message.reply_text(
+        f"Выберите подростка для {operation_type} звёзд:",
+        reply_markup=reply_markup
+    )
+    context.user_data['selection_message_id'] = sent_message.message_id
+    context.user_data['selection_chat_id'] = update.message.chat_id
+
+async def stars_handle_teen_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "stars_cancel_operation":
+        try:
+            await context.bot.delete_message(
+                chat_id=context.user_data['selection_chat_id'],
+                message_id=context.user_data['selection_message_id']
+            )
+        except:
+            pass
+        await query.edit_message_text("Операция отменена")
+        return ConversationHandler.END
+    
+    try:
+        await context.bot.delete_message(
+            chat_id=context.user_data['selection_chat_id'],
+            message_id=context.user_data['selection_message_id']
+        )
+    except:
+        pass
+    
+    teen_id = query.data.replace("stars_select_teen_", "")
+    context.user_data['selected_teen_id'] = teen_id
+    
+    sheet_repo = getSheetRepository(context)
+    cell = sheet_repo.sheet1.find(teen_id)
+    if cell:
+        name = sheet_repo.sheet1.cell(cell.row, 2).value
+        lastname = sheet_repo.sheet1.cell(cell.row, 3).value
+        context.user_data['selected_teen_name'] = f"{name} {lastname}"
+    
+    operation_type = "добавления" if context.user_data.get('operation') == 'add' else "списания"
+    
+    sent_message = await query.message.reply_text(
+        f"Введите количество звёзд для {operation_type}:"
+    )
+    context.user_data['stars_message_id'] = sent_message.message_id
+    
+    return ENTER_STARS
+
+async def stars_enter_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        try:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=context.user_data['stars_message_id']
+            )
+        except:
+            pass
+        
+        try:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=update.message.message_id
+            )
+        except:
+            pass
+        
+        stars = int(update.message.text)
+        if stars <= 0:
+            sent_message = await update.message.reply_text("Количество звёзд должно быть положительным числом")
+            context.user_data['stars_message_id'] = sent_message.message_id
+            return ENTER_STARS
+        
+        context.user_data['stars_amount'] = stars
+        
+        operation_type = "добавления" if context.user_data.get('operation') == 'add' else "списания"
+        
+        sent_message = await update.message.reply_text(
+            f"Введите комментарий для {operation_type} {stars} звёзд:\n"
+        )
+        context.user_data['comment_message_id'] = sent_message.message_id
+        
+        return ENTER_COMMENT
+        
+    except ValueError:
+        sent_message = await update.message.reply_text("Пожалуйста, введите корректное число")
+        context.user_data['stars_message_id'] = sent_message.message_id
+        return ENTER_STARS
+
+async def stars_enter_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await context.bot.delete_message(
+            chat_id=update.message.chat_id,
+            message_id=context.user_data['comment_message_id']
+        )
+    except:
+        pass
+    
+    try:
+        await context.bot.delete_message(
+            chat_id=update.message.chat_id,
+            message_id=update.message.message_id
+        )
+    except:
+        pass
+    
+    comment = update.message.text
+    teen_id = context.user_data['selected_teen_id']
+    stars = context.user_data['stars_amount']
+    operation = context.user_data['operation']
+    
+    sheet_repo = getSheetRepository(context)
+    
+    try:
+        cell = sheet_repo.sheet1.find(teen_id)
+        if not cell:
+            await update.message.reply_text("Произошла ошибка")
+            return ConversationHandler.END
+        
+        current_stars = sheet_repo.sheet1.cell(cell.row, 7).value
+        current_stars = int(current_stars) if current_stars else 0
+        
+        if operation == 'add':
+            new_stars = current_stars + stars
+            operation_type = "Пополнение"
+        else:
+            if current_stars < stars:
+                await update.message.reply_text(
+                    f"Недостаточно звёзд для списания. У подростка {current_stars} звёзд"
+                )
+                return ConversationHandler.END
+            new_stars = current_stars - stars
+            operation_type = "Списание"
+        
+        sheet_repo.sheet1.update_cell(cell.row, 7, str(new_stars))
+        
+        sheet_repo.add_comment_to_sheet2(teen_id, operation_type, stars, comment)
+        
+        if operation == 'add':
+            try:
+                user_gender = sheet_repo.getUserGender(teen_id)
+                notification = await get_random_notification_message(stars, comment, user_gender)
+                await context.bot.send_message(chat_id=int(teen_id), text=notification)
+            except Exception as e:
+                print(f"Не удалось отправить сообщение: {e}")
+        
+        teen_name = context.user_data.get('selected_teen_name', 'Подросток')
+        stars_word = decline_stars_message(stars)
+        new_stars_word = decline_stars_message(new_stars)
+        
+        success_message = (
+            f"✅ Успешно!\n"
+            f"{'Добавлено' if operation == 'add' else 'Списано'} {stars} {stars_word} "
+            f"{'для' if operation == 'add' else 'у'} {teen_name}\n"
+            f"Комментарий: {comment}\n"
+            f"Новый баланс: {new_stars} {new_stars_word}"
+        )
+        
+        await update.message.reply_text(success_message)
+        
+    except Exception as e:
+        print(f"Ошибка при обработке операции: {e}")
+        await update.message.reply_text("Произошла ошибка")
+    
+    finally:
+        keys_to_remove = ['selected_teen_id', 'selected_teen_name', 'stars_amount', 'operation', 
+                         'selection_message_id', 'selection_chat_id', 'stars_message_id', 'comment_message_id']
+        for key in keys_to_remove:
+            context.user_data.pop(key, None)
+    
+    return ConversationHandler.END
+
+async def stars_cancel_operation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        await context.bot.delete_message(
+            chat_id=context.user_data['selection_chat_id'],
+            message_id=context.user_data['selection_message_id']
+        )
+    except:
+        pass
+    
+    await query.edit_message_text("Действие отменено")
+    
+    keys_to_remove = ['selected_teen_id', 'selected_teen_name', 'stars_amount', 'operation', 
+                     'selection_message_id', 'selection_chat_id', 'stars_message_id', 'comment_message_id']
+    for key in keys_to_remove:
+        context.user_data.pop(key, None)
+    
+    return ConversationHandler.END
 
 async def start_question_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['awaiting_question'] = True
@@ -249,10 +471,7 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     data = query.data
-    
-    if data.startswith("select_teen_"):
-        return
-    
+
     try:
         if data.startswith("answer_"):
             question_id = data.split("_")[1]
@@ -574,85 +793,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["in_dialog"] = False
     return ConversationHandler.END
 
-
-# Выбор подростка из списка
-async def select_teen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin_ids = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
-    user_id = update.message.from_user.id
-    if user_id not in admin_ids:
-        return
-
-    sheet_repo = getSheetRepository(context)
-
-    try:
-        data = sheet_repo.sheet1.get_all_values()
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при чтении данных из таблицы: {e}")
-        return
-
-    keyboard = []
-    for row in data[1:]:
-        user_id_col = row[0]
-        name = row[1]
-        lastname = row[2]
-        if name and lastname and user_id_col:
-            button = InlineKeyboardButton(
-                text=f"{name} {lastname}",
-                callback_data=f"select_teen_{user_id_col}"
-            )
-            keyboard.append([button])
-
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
-    keyboard.append([cancel_button])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text("Выберите подростка:", reply_markup=reply_markup)
-    return SELECT_TEEN
-
-
-async def select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    selected_user = update.message.text
-
-    if selected_user == "Отмена":
-        await stop(update, context)
-        return ConversationHandler.END
-
-    context.user_data["selected_user"] = selected_user
-
-    await update.message.reply_text(
-        "Введите количество звёзд:", reply_markup=ReplyKeyboardRemove()
-    )
-
-    return ENTER_STARS
-
-
-async def enter_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    stars = update.message.text
-    query = update.callback_query
-
-    try:
-        stars = int(stars)
-        if stars < 0:
-            await update.message.reply_text(
-                "Количество звёзд не может быть отрицательным."
-            )
-            return ENTER_STARS
-    except ValueError:
-        await update.message.reply_text("Некорректное количество звёзд. Введите число.")
-        return ENTER_STARS
-
-    context.user_data["stars"] = stars
-
-    cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel")
-    reply_markup = InlineKeyboardMarkup([[cancel_button]])
-    # Запрашиваем комментарий
-    await update.message.reply_text(
-        "Введите комментарий в виде действия в прошедшем времени. Например: помыл посуду, рассказал свидетельство на сцене итп:",
-        reply_markup=reply_markup,
-    )
-    return ENTER_COMMENT
-
-
 def enter_comment(operation: str):
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Получаем тип операции из context.user_data
@@ -691,7 +831,7 @@ def enter_comment(operation: str):
                 # comment
                 if operation == "add":
                     sheet_repo.add_comment_to_sheet2(
-                        int(selected_user_id), "Пополнение", stars, comment
+                        selected_user_id, "Пополнение", stars, comment
                     )
                     user_gender = sheet_repo.getUserGender(selected_user_id)
                     message = await get_random_notification_message(
@@ -737,33 +877,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
-
-async def handle_teen_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()  # Это важно для подтверждения нажатия
-    
-    try:
-        # Получаем ID подростка из callback_data
-        teen_id = query.data.split('_')[-1]
-        context.user_data["selected_user_id"] = teen_id
-        
-        # Создаем кнопку отмены
-        keyboard = [[InlineKeyboardButton("Отмена", callback_data="cancel")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Редактируем сообщение вместо отправки нового
-        await query.edit_message_text(
-            text="Введите количество звёзд:",
-            reply_markup=reply_markup
-        )
-        return ENTER_STARS
-    except Exception as e:
-        print(f"Ошибка в handle_teen_selection: {e}")
-        await query.message.reply_text("Произошла ошибка при выборе подростка")
-        return ConversationHandler.END
-
-
-
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -806,6 +919,27 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Выберите подростка:", reply_markup=reply_markup)
 
+def has_active_questions(context: ContextTypes.DEFAULT_TYPE, user_id: str) -> bool:
+
+    sheet_repo = getSheetRepository(context)
+    
+    try:
+        all_questions = sheet_repo.sheet3.get_all_values()
+        if len(all_questions) <= 1:
+            return "нет"
+
+        for row in all_questions[1:]: 
+            if len(row) >= 7:  
+                question_user_id = row[1]  
+                status = row[6]  
+                
+                if question_user_id == str(user_id) and status == 'Активный':
+                    return "да"
+                    
+    except Exception as e:
+        print(f"Ошибка при проверке активных вопросов: {e}")
+    
+    return "нет"
 
 async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -825,6 +959,7 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"Ошибка при чтении данных из таблицы: {e}")
         return
 
+
     # Ищем строку с выбранным пользователем
     for row in data:
         if row[0] == user_id:  # Ищем по ID пользователя колонка A
@@ -834,8 +969,19 @@ async def show_user_stars(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 row[6] if len(row) > 6 and row[6] else "0"
             )  # Колонка L (Stars), если пусто, то 0
             dec_stars_list = decline_stars_message(stars)
+
+            active_q = has_active_questions(context, str(user_id))
+            access_status = sheet_repo.getUserAccess(user_id)
+            if access_status and "Запрет" in access_status:
+                blacklist = "да"
+            else:
+                blacklist = "нет"
+                
             await query.edit_message_text(
-                f"У подростка {name} {lastname} {stars} {dec_stars_list}."
+                f"{name} {lastname}\n"
+                f"Баланс - {stars} {dec_stars_list}\n"
+                f"Чс - {blacklist}\n"
+                f"Активные вопросы - {active_q}"
             )
             return
 
