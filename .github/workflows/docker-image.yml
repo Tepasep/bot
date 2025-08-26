@@ -22,7 +22,6 @@ jobs:
           username: deploy
           key: ${{ secrets.VDS_SSH_KEY }}
           script: |
-            cd ~/bot || git clone git@github.com:USERNAME/REPO.git ~/bot
             cd ~/bot
             git pull origin main
             docker build -t mybot:latest .
