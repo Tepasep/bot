@@ -21,10 +21,20 @@ jobs:
           host: ${{ secrets.VDS_HOST }}
           username: deploy
           key: ${{ secrets.VDS_SSH_KEY }}
+          envs: TELEGRAM_BOT_TOKEN,SPREADSHEET_NAME,ADMIN_ID,CREDENTIALS_JSON_B64
           script: |
             cd ~/bot
             git pull origin main
+            echo "${CREDENTIALS_JSON_B64}" | base64 -d > credentials.json
             docker build -t mybot:latest .
             docker stop mybot || true
             docker rm mybot || true
-            docker run -d --name mybot --restart always mybot:latest
+            docker run -d \
+              --name mybot \
+              --restart always \
+              -e TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}" \
+              -e SPREADSHEET_NAME="${SPREADSHEET_NAME}" \
+              -e ADMIN_ID="${ADMIN_ID}" \
+              -e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}" \
+              -v $(pwd)/credentials.json:/app/credentials.json \
+              mybot:latest
