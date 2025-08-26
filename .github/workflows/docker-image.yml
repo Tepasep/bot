@@ -40,5 +40,6 @@ jobs:
               -e TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}" \
               -e SPREADSHEET_NAME="${SPREADSHEET_NAME}" \
               -e ADMIN_ID="${ADMIN_ID}" \
+              -e CREDENTIALS_FILE="./credentials.json" \
               -v $(pwd)/credentials.json:/app/credentials.json \
               mybot:latest
