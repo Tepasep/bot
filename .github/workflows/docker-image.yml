@@ -17,6 +17,11 @@ jobs:
 
       - name: Deploy to VDS
         uses: appleboy/ssh-action@v1.0.0
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SPREADSHEET_NAME: ${{ secrets.SPREADSHEET_NAME }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          CREDENTIALS_JSON_B64: ${{ secrets.CREDENTIALS_JSON_B64 }}
         with:
           host: ${{ secrets.VDS_HOST }}
           username: deploy
