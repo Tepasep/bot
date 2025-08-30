@@ -37,6 +37,7 @@ from bot_stars.utils import (
 NAME, LASTNAME, BIRTHDATE, GENDER, PHONE = range(5)
 SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
 ANSWER_INPUT, REJECT_CONFIRMATION = range(2)
+HANDLING_QUESTION, ANSWER_INPUT = range(2)
 
 # Клавиатура
 async def send_menu_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, admin_ids: list):
@@ -394,7 +395,7 @@ async def stars_cancel_operation(update: Update, context: ContextTypes.DEFAULT_T
 async def start_question_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['awaiting_question'] = True
     await update.message.reply_text("Напиши свой вопрос:")
-    return "HANDLING_QUESTION"
+    return HANDLING_QUESTION
 
 async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = update.message.text
@@ -473,10 +474,9 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
     data = query.data
 
     try:
-        if data.startswith("answer_"):
+        if data.startswith("answer_") or data.startswith("select_"):
             question_id = data.split("_")[1]
             context.user_data['current_question'] = question_id
-            context.user_data['answering_question'] = True
             await query.message.reply_text(f"Введите ответ на вопрос #{question_id}:")
             return ANSWER_INPUT
         
@@ -489,13 +489,6 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
                 except:
                     await query.message.reply_text(f"Вопрос #{question_id} отклонён")
             return ConversationHandler.END
-        
-        elif data.startswith("select_"):
-            question_id = data.split("_")[1]
-            context.user_data['current_question'] = question_id
-            context.user_data['answering_question'] = True
-            await query.message.reply_text(f"Введите ответ на вопрос #{question_id}:")
-            return ANSWER_INPUT
             
     except Exception as e:
         print(f"ошибка в handle_admin_actions: {e}")

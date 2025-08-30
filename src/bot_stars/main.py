@@ -56,7 +56,7 @@ from .commands import (
     stars_handle_teen_selection,
     stars_enter_amount,
     stars_enter_comment,
-    
+    HANDLING_QUESTION,
 )
 
 
@@ -106,20 +106,17 @@ def main():
 
     #Вопросы
     app.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(filters.Text([BTN_HELP]), start_question_flow)],
+        entry_points=[
+            MessageHandler(filters.Text([BTN_HELP]), start_question_flow),
+            CommandHandler('active_questions', active_questions),
+            CallbackQueryHandler(handle_admin_actions, pattern="^(answer_|reject_|select_)")
+        ],
         states={
-            "HANDLING_QUESTION": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-        ))
-    
-    app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler('active_questions', active_questions)],
-        states={
+            HANDLING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question)],
             ANSWER_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer)]
         },
         fallbacks=[CommandHandler('cancel', cancel)]
-        ))
+    ))
     
     # ConversationHandler для /start
     conv_handler = ConversationHandler(
@@ -142,24 +139,14 @@ def main():
 
     # block
     app.add_handler(CommandHandler("block", block_user))
-    app.add_handler(
-        CallbackQueryHandler(handle_user_selection_block, pattern="^block_user_")
-    )
-    app.add_handler(
-        CallbackQueryHandler(handle_confirmation, pattern="^confirm_block_")
-    )
+    app.add_handler(CallbackQueryHandler(handle_user_selection_block, pattern="^block_user_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation, pattern="^confirm_block_"))
     app.add_handler(CallbackQueryHandler(handle_confirmation, pattern="^cancel_block$"))
     # unblock
     app.add_handler(CommandHandler("unblock", unblock_user))
-    app.add_handler(
-        CallbackQueryHandler(handle_user_selection_unblock, pattern="^unblock_user_")
-    )
-    app.add_handler(
-        CallbackQueryHandler(handle_confirmation1, pattern="^confirm_unblock_")
-    )
-    app.add_handler(
-        CallbackQueryHandler(handle_confirmation1, pattern="^cancel_unblock$")
-    )
+    app.add_handler(CallbackQueryHandler(handle_user_selection_unblock, pattern="^unblock_user_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation1, pattern="^confirm_unblock_"))
+    app.add_handler(CallbackQueryHandler(handle_confirmation1, pattern="^cancel_unblock$"))
     # другое
     app.add_handler(CommandHandler("list", list_users))
     app.add_handler(CallbackQueryHandler(show_user_stars, pattern="^user_stars_"))
