@@ -36,7 +36,7 @@ from bot_stars.utils import (
 
 
 NAME, LASTNAME, BIRTHDATE, GENDER, PHONE = range(5)
-SELECT_TEEN, ENTER_STARS, ENTER_COMMENT = range(3)
+SELECT_TEEN, ENTER_STARS, ENTER_COMMENT, PREVIEW_MESSAGE = range(4)
 ANSWER_INPUT, REJECT_CONFIRMATION = range(2)
 HANDLING_QUESTION, ANSWER_INPUT = range(2)
 
@@ -299,7 +299,7 @@ async def stars_enter_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     except:
         pass
-    
+
     try:
         await context.bot.delete_message(
             chat_id=update.message.chat_id,
@@ -307,51 +307,114 @@ async def stars_enter_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     except:
         pass
-    
+
     comment = update.message.text
     teen_id = context.user_data['selected_teen_id']
     stars = context.user_data['stars_amount']
     operation = context.user_data['operation']
-    
+
+    context.user_data['pending_comment'] = comment
+
+    if operation == 'add':
+        try:
+            sheet_repo = getSheetRepository(context)
+            user_gender = sheet_repo.getUserGender(teen_id)
+            preview_text = await get_random_notification_message(stars, comment, user_gender)
+        except Exception:
+            preview_text = f"(не удалось сгенерировать сообщение)"
+        context.user_data['pending_notification'] = preview_text
+
+        teen_name = context.user_data.get('selected_teen_name', 'Подросток')
+        preview_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Отправить", callback_data="stars_confirm_send"),
+                InlineKeyboardButton("✏️ Изменить комментарий", callback_data="stars_edit_comment"),
+            ]
+        ])
+        sent = await update.message.reply_text(
+            f"📋 Предпросмотр сообщения для {teen_name}:\n\n"
+            f"{preview_text}\n\n"
+            f"Отправить или изменить комментарий?",
+            reply_markup=preview_keyboard,
+        )
+        context.user_data['preview_message_id'] = sent.message_id
+        return PREVIEW_MESSAGE
+    else:
+        # For removal there is no user notification, process immediately
+        return await _stars_process_operation(update.message, context, comment)
+
+
+async def stars_preview_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "stars_confirm_send":
+        try:
+            await query.delete_message()
+        except:
+            pass
+        return await _stars_process_operation(query.message, context, context.user_data.get('pending_comment', ''))
+
+    elif query.data == "stars_edit_comment":
+        try:
+            await query.delete_message()
+        except:
+            pass
+        stars = context.user_data['stars_amount']
+        operation_type = "добавления"
+        sent_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"Введите новый комментарий для {operation_type} {stars} звёзд:\n",
+        )
+        context.user_data['comment_message_id'] = sent_message.message_id
+        return ENTER_COMMENT
+
+    return PREVIEW_MESSAGE
+
+
+async def _stars_process_operation(message_or_query, context: ContextTypes.DEFAULT_TYPE, comment: str):
+    teen_id = context.user_data['selected_teen_id']
+    stars = context.user_data['stars_amount']
+    operation = context.user_data['operation']
+    notification = context.user_data.pop('pending_notification', None)
+
     sheet_repo = getSheetRepository(context)
-    
+
     try:
         cell = sheet_repo.sheet1.find(teen_id)
         if not cell:
-            await update.message.reply_text("Произошла ошибка")
+            await context.bot.send_message(chat_id=message_or_query.chat_id, text="Произошла ошибка")
             return ConversationHandler.END
-        
+
         current_stars = sheet_repo.sheet1.cell(cell.row, 7).value
         current_stars = int(current_stars) if current_stars else 0
-        
+
         if operation == 'add':
             new_stars = current_stars + stars
             operation_type = "Пополнение"
         else:
             if current_stars < stars:
-                await update.message.reply_text(
-                    f"Недостаточно звёзд для списания. У подростка {current_stars} звёзд"
+                await context.bot.send_message(
+                    chat_id=message_or_query.chat_id,
+                    text=f"Недостаточно звёзд для списания. У подростка {current_stars} звёзд"
                 )
                 return ConversationHandler.END
             new_stars = current_stars - stars
             operation_type = "Списание"
-        
+
         sheet_repo.sheet1.update_cell(cell.row, 7, str(new_stars))
-        
         sheet_repo.add_comment_to_sheet2(teen_id, operation_type, stars, comment)
-        
-        if operation == 'add':
+
+        if operation == 'add' and notification:
             try:
-                user_gender = sheet_repo.getUserGender(teen_id)
-                notification = await get_random_notification_message(stars, comment, user_gender)
                 await context.bot.send_message(chat_id=int(teen_id), text=notification)
             except Exception as e:
                 print(f"Не удалось отправить сообщение: {e}")
-        
+
         teen_name = context.user_data.get('selected_teen_name', 'Подросток')
         stars_word = decline_stars_message(stars)
         new_stars_word = decline_stars_message(new_stars)
-        
+
         success_message = (
             f"✅ Успешно!\n"
             f"{'Добавлено' if operation == 'add' else 'Списано'} {stars} {stars_word} "
@@ -359,19 +422,19 @@ async def stars_enter_comment(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Комментарий: {comment}\n"
             f"Новый баланс: {new_stars} {new_stars_word}"
         )
-        
-        await update.message.reply_text(success_message)
-        
+        await context.bot.send_message(chat_id=message_or_query.chat_id, text=success_message)
+
     except Exception as e:
         print(f"Ошибка при обработке операции: {e}")
-        await update.message.reply_text("Произошла ошибка")
-    
+        await context.bot.send_message(chat_id=message_or_query.chat_id, text="Произошла ошибка")
+
     finally:
-        keys_to_remove = ['selected_teen_id', 'selected_teen_name', 'stars_amount', 'operation', 
-                         'selection_message_id', 'selection_chat_id', 'stars_message_id', 'comment_message_id']
+        keys_to_remove = ['selected_teen_id', 'selected_teen_name', 'stars_amount', 'operation',
+                          'selection_message_id', 'selection_chat_id', 'stars_message_id',
+                          'comment_message_id', 'pending_comment', 'preview_message_id']
         for key in keys_to_remove:
             context.user_data.pop(key, None)
-    
+
     return ConversationHandler.END
 
 async def stars_cancel_operation(update: Update, context: ContextTypes.DEFAULT_TYPE):

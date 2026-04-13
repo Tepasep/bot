@@ -50,10 +50,12 @@ from .commands import (
     SELECT_TEEN,
     ENTER_COMMENT,
     ENTER_STARS,
+    PREVIEW_MESSAGE,
     stars_cancel_operation,
     stars_handle_teen_selection,
     stars_enter_amount,
     stars_enter_comment,
+    stars_preview_action,
     HANDLING_QUESTION,
 )
 from .health import start_health_server
@@ -101,6 +103,10 @@ def main():
             ],
             ENTER_STARS: [MessageHandler(filters.TEXT & ~filters.COMMAND, stars_enter_amount)],
             ENTER_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, stars_enter_comment)],
+            PREVIEW_MESSAGE: [
+                CallbackQueryHandler(stars_preview_action, pattern="^stars_confirm_send$"),
+                CallbackQueryHandler(stars_preview_action, pattern="^stars_edit_comment$"),
+            ],
         },
         fallbacks=[
             CallbackQueryHandler(stars_cancel_operation, pattern="^stars_cancel_operation$"),
