@@ -31,3 +31,7 @@ test = "pytest tests"
 [tool.pdm]
 distribution = true
 package-dir = "bot/src"
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
