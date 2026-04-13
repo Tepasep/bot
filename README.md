@@ -1,81 +1,51 @@
 # bot-stars
 
-**Описание**
-- **Назначение:** Telegram-бот для управления «звёздами» (баллами) подростков, с регистрацией пользователей, просмотром рейтинга, вопросами пользователям и админскими действиями.
-- **Функции:**
-	- `/start` — онбординг (имя, фамилия, дата рождения, пол, телефон).
-	- `/help` — справка.
-	- `/viewstars` — просмотр звёзд пользователя.
-	- Админ-действия: блокировка/разблокировка (`/block`, `/unblock`), просмотр списка (`/list`), добавление/удаление звёзд через кнопки, ответы на вопросы пользователей.
-- **Хранение данных:** Google Sheets (через `gspread` и `oauth2client`), путь к JSON-credentials задаётся через переменную окружения.
+Telegram-бот для управления звёздами (баллами) подростков. Хранение данных — Google Sheets.
 
-**Требования**
-- Python 3.13+
-- Доступ к Google Sheets и JSON-файл сервисного аккаунта (`credentials.json`).
+## Функции
 
-**Переменные окружения (.env)**
-- `TELEGRAM_BOT_TOKEN`: токен бота.
-- `SPREADSHEET_NAME`: имя таблицы Google Sheets.
-- `CREDENTIALS_FILE`: путь к JSON-файлу сервисного аккаунта.
+- Регистрация участников (`/start`)
+- Просмотр баланса и рейтинга
+- Вопросы администраторам
+- Админ: начисление/списание звёзд с предпросмотром уведомления, блокировка, список участников
 
-Пример файла `.env`:
+## Переменные окружения
 
 ```env
-TELEGRAM_BOT_TOKEN=123456:ABCDEF...
+TELEGRAM_BOT_TOKEN=...
 SPREADSHEET_NAME=Jesus Stars
 CREDENTIALS_FILE=credentials.json
-```
-
-## Установка зависимостей
-
-Вариант A — через PDM (рекомендуется):
-
-```bash
-python3 -m pip install -U pdm
-pdm install
-```
-
-Вариант B — через venv + pip:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install .
+ADMIN_ID=111111111,222222222
 ```
 
 ## Запуск
 
-Перед запуском убедитесь, что `.env` и `credentials.json` доступны и корректны.
-
-Вариант A — PDM:
-
 ```bash
+pdm install
 pdm run start
 ```
 
-Вариант B — напрямую Python:
+## Тесты
 
 ```bash
-python -m bot_stars.main
+pdm run pytest
+pdm run pytest --cov=bot_stars --cov-report=term-missing
 ```
+
+Тесты не требуют реального подключения к Google Sheets — всё замокано.
 
 ## Docker
 
-Сборка образа:
-
 ```bash
 docker build -t bot-stars .
+
+docker run --name bot-stars --env-file .env \
+  -v "$(pwd)/credentials.json:/app/credentials.json:ro" \
+  -e CREDENTIALS_FILE=/app/credentials.json \
+  bot-stars
 ```
 
-Запуск контейнера с переменными окружения и монтированием `credentials.json`:
+## CI/CD
 
-```bash
-docker run \
-	--name bot-stars \
-	--env-file .env \
-	-v "$(pwd)/credentials.json:/app/credentials.json:ro" \
-	-e CREDENTIALS_FILE=/app/credentials.json \
-	bot-stars
-```
-
-Примечание: В Dockerfile используется установка зависимостей через PDM и запуск `python -m bot_stars.main`.
+- **push в main** — прогон тестов → деплой в Coolify
+- **PR** — поднимается preview-окружение, при закрытии — останавливается

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened, closed]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install PDM
+        run: pip install pdm
+
+      - name: Install dependencies
+        run: pdm install --dev
+
+      - name: Run tests
+        run: pdm run pytest tests/ -v || [ "$?" = "5" ]
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Trigger Coolify deploy
+        run: |
+          curl -s -X GET \
+            "https://coolify.lubadatubadu.ru/api/v1/deploy?uuid=jgcccc8k48sgsgs00o0og4ss" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
+
+  preview:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Deploy preview
+        if: github.event.action != 'closed'
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: root
+          key: ${{ secrets.VDS_SSH_KEY }}
+          script: |
+            /root/coolify-preview.sh open ${{ github.event.pull_request.number }} "${{ github.event.pull_request.html_url }}"
+
+      - name: Stop preview
+        if: github.event.action == 'closed'
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: root
+          key: ${{ secrets.VDS_SSH_KEY }}
+          script: |
+            /root/coolify-preview.sh close ${{ github.event.pull_request.number }}

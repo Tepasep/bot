@@ -50,12 +50,15 @@ from .commands import (
     SELECT_TEEN,
     ENTER_COMMENT,
     ENTER_STARS,
+    PREVIEW_MESSAGE,
     stars_cancel_operation,
     stars_handle_teen_selection,
     stars_enter_amount,
     stars_enter_comment,
+    stars_preview_action,
     HANDLING_QUESTION,
 )
+from .health import start_health_server
 
 
 warnings.filterwarnings("ignore", category=PTBUserWarning)
@@ -63,6 +66,10 @@ warnings.filterwarnings("ignore", category=PTBUserWarning)
 
 def main():
     load_dotenv()
+    # Запуск HTTP healthcheck сервера в фоне как можно раньше
+    HEALTH_PORT = int(os.getenv("HEALTHCHECK_PORT", "8000"))
+    start_health_server(port=HEALTH_PORT)
+
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME")
     CREDENTIALS_FILE = os.getenv("CREDENTIALS_FILE")
@@ -96,6 +103,10 @@ def main():
             ],
             ENTER_STARS: [MessageHandler(filters.TEXT & ~filters.COMMAND, stars_enter_amount)],
             ENTER_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, stars_enter_comment)],
+            PREVIEW_MESSAGE: [
+                CallbackQueryHandler(stars_preview_action, pattern="^stars_confirm_send$"),
+                CallbackQueryHandler(stars_preview_action, pattern="^stars_edit_comment$"),
+            ],
         },
         fallbacks=[
             CallbackQueryHandler(stars_cancel_operation, pattern="^stars_cancel_operation$"),
