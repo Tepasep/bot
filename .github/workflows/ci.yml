@@ -40,9 +40,15 @@ jobs:
     steps:
       - name: Trigger Coolify deploy
         run: |
-          curl -s -X GET \
-            "https://coolify.lubadatubadu.ru/api/v1/deploy?uuid=jgcccc8k48sgsgs00o0og4ss" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
+          response=$(curl -sS --fail-with-body -X GET \
+            "${{ secrets.COOLIFY_DEPLOY_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
+
+          echo "$response"
+          if echo "$response" | grep -qi "No resources found"; then
+            echo "Coolify deploy failed: resource not found" >&2
+            exit 1
+          fi
 
   preview:
     runs-on: ubuntu-latest
