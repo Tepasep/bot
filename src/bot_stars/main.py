@@ -16,6 +16,8 @@ from telegram.warnings import PTBUserWarning
 from .keyboards import BTN_HELP, BTN_ASK, BTN_ADMIN_ADDSTARS, BTN_ADMIN_REMSTARS
 from .commands import (
     handle_menu,
+    cancel_current_action_and_dispatch_menu,
+    MENU_BUTTON_TEXTS,
     send_help_message,
     start,
     get_phone,
@@ -89,6 +91,9 @@ def main():
 
     # Сохранение repository в bot_data
     app.bot_data["sheet_repository"] = sheet_repository
+
+    menu_button_filter = filters.Text(list(MENU_BUTTON_TEXTS))
+    text_without_menu_filter = filters.TEXT & ~filters.COMMAND & ~menu_button_filter
     
     # ConversationHandler для работы со звездами
     stars_conv_handler = ConversationHandler(
@@ -101,8 +106,8 @@ def main():
                 CallbackQueryHandler(stars_handle_teen_selection, pattern="^stars_select_teen_"),
                 CallbackQueryHandler(stars_cancel_operation, pattern="^stars_cancel_operation$")
             ],
-            ENTER_STARS: [MessageHandler(filters.TEXT & ~filters.COMMAND, stars_enter_amount)],
-            ENTER_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, stars_enter_comment)],
+            ENTER_STARS: [MessageHandler(text_without_menu_filter, stars_enter_amount)],
+            ENTER_COMMENT: [MessageHandler(text_without_menu_filter, stars_enter_comment)],
             PREVIEW_MESSAGE: [
                 CallbackQueryHandler(stars_preview_action, pattern="^stars_confirm_send$"),
                 CallbackQueryHandler(stars_preview_action, pattern="^stars_edit_comment$"),
@@ -110,6 +115,7 @@ def main():
         },
         fallbacks=[
             CallbackQueryHandler(stars_cancel_operation, pattern="^stars_cancel_operation$"),
+            MessageHandler(menu_button_filter, cancel_current_action_and_dispatch_menu),
         ],
     )
 
@@ -121,27 +127,33 @@ def main():
             CallbackQueryHandler(handle_admin_actions, pattern="^(answer_|reject_|select_)")
         ],
         states={
-            HANDLING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question)],
-            ANSWER_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer)]
+            HANDLING_QUESTION: [MessageHandler(text_without_menu_filter, handle_user_question)],
+            ANSWER_INPUT: [MessageHandler(text_without_menu_filter, handle_answer)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[
+            CommandHandler('cancel', cancel),
+            MessageHandler(menu_button_filter, cancel_current_action_and_dispatch_menu),
+        ]
     ))
     
     # ConversationHandler для /start
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            LASTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lastname)],
-            BIRTHDATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_birthdate)],
-            GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_gender)],
+            NAME: [MessageHandler(text_without_menu_filter, get_name)],
+            LASTNAME: [MessageHandler(text_without_menu_filter, get_lastname)],
+            BIRTHDATE: [MessageHandler(text_without_menu_filter, get_birthdate)],
+            GENDER: [MessageHandler(text_without_menu_filter, get_gender)],
             PHONE: [
                 MessageHandler(
-                    filters.CONTACT | (filters.TEXT & ~filters.COMMAND), get_phone
+                    filters.CONTACT | text_without_menu_filter, get_phone
                 )
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            MessageHandler(menu_button_filter, cancel_current_action_and_dispatch_menu),
+        ],
     )
 
     app.add_handler(stars_conv_handler)

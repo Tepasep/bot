@@ -40,6 +40,62 @@ SELECT_TEEN, ENTER_STARS, ENTER_COMMENT, PREVIEW_MESSAGE = range(4)
 ANSWER_INPUT, REJECT_CONFIRMATION = range(2)
 HANDLING_QUESTION, ANSWER_INPUT = range(2)
 
+MENU_BUTTON_TEXTS = (
+    BTN_BALANCE,
+    BTN_HELP,
+    BTN_ASK,
+    BTN_TOP,
+    BTN_ADMIN_LIST,
+    BTN_ADMIN_ADDSTARS,
+    BTN_ADMIN_REMSTARS,
+    BTN_ADMIN_BLOCK,
+    BTN_ADMIN_UNBLOCK,
+    BTN_ADMIN_QUESTIONS,
+)
+
+
+def is_menu_command_text(text: str | None) -> bool:
+    return bool(text) and text in MENU_BUTTON_TEXTS
+
+
+async def cleanup_incomplete_action_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = getattr(update, "message", None)
+    callback_query = getattr(update, "callback_query", None)
+
+    default_chat_id = None
+    if message:
+        default_chat_id = message.chat_id
+    elif callback_query and callback_query.message:
+        default_chat_id = callback_query.message.chat_id
+
+    async def try_delete(msg_id_key: str, chat_id_key: str | None = None):
+        msg_id = context.user_data.get(msg_id_key)
+        if not msg_id:
+            return
+        chat_id = context.user_data.get(chat_id_key) if chat_id_key else default_chat_id
+        if not chat_id:
+            return
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception:
+            pass
+
+    await try_delete("selection_message_id", "selection_chat_id")
+    await try_delete("stars_message_id")
+    await try_delete("comment_message_id")
+    await try_delete("preview_message_id")
+    await try_delete("last_bot_message_id")
+    await try_delete("question_prompt_message_id")
+    await try_delete("answer_prompt_message_id")
+    await try_delete("action_message_id", "action_chat_id")
+
+
+async def cancel_current_action_and_dispatch_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # При переключении на команду из меню сбрасываем незавершённый сценарий.
+    await cleanup_incomplete_action_messages(update, context)
+    context.user_data.clear()
+    return await handle_menu(update, context)
+
 # Клавиатура
 async def send_menu_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, admin_ids: list):
     if user_id in admin_ids:
@@ -125,7 +181,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def handle_menu(update, context):
     text = update.message.text
     user_data = context.user_data
-    if user_data.get('answering_question'):
+    if is_menu_command_text(text):
+        await cleanup_incomplete_action_messages(update, context)
+    if user_data.get('answering_question') and not is_menu_command_text(text):
         return None
     if text == "❌ Отмена":
         await remove_keyboard(update, context)
@@ -460,7 +518,8 @@ async def stars_cancel_operation(update: Update, context: ContextTypes.DEFAULT_T
 
 async def start_question_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['awaiting_question'] = True
-    await update.message.reply_text("Напиши свой вопрос:")
+    sent_message = await update.message.reply_text("Напиши свой вопрос:")
+    context.user_data['question_prompt_message_id'] = sent_message.message_id
     return HANDLING_QUESTION
 
 async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -529,10 +588,12 @@ async def active_questions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
+    sent_message = await update.message.reply_text(
         "Активные вопросы:\n" + "\n".join(questions_list),
         reply_markup=reply_markup
     )
+    context.user_data["action_message_id"] = sent_message.message_id
+    context.user_data["action_chat_id"] = update.message.chat_id
 
 async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -543,7 +604,8 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
         if data.startswith("answer_") or data.startswith("select_"):
             question_id = data.split("_")[1]
             context.user_data['current_question'] = question_id
-            await query.message.reply_text(f"Введите ответ на вопрос #{question_id}:")
+            sent_message = await query.message.reply_text(f"Введите ответ на вопрос #{question_id}:")
+            context.user_data['answer_prompt_message_id'] = sent_message.message_id
             return ANSWER_INPUT
         
         elif data.startswith("reject_"):
@@ -979,7 +1041,9 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([button])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите подростка:", reply_markup=reply_markup)
+    sent_message = await update.message.reply_text("Выберите подростка:", reply_markup=reply_markup)
+    context.user_data["action_message_id"] = sent_message.message_id
+    context.user_data["action_chat_id"] = update.message.chat_id
 
 def has_active_questions(context: ContextTypes.DEFAULT_TYPE, user_id: str) -> bool:
 
@@ -1083,9 +1147,11 @@ async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_block")
     keyboard.append([cancel_button])
 
-    await update.message.reply_text(
+    sent_message = await update.message.reply_text(
         "Выберите подростка:", reply_markup=InlineKeyboardMarkup(keyboard)
     )
+    context.user_data["action_message_id"] = sent_message.message_id
+    context.user_data["action_chat_id"] = update.message.chat_id
 
 
 async def handle_user_selection_block(
@@ -1181,9 +1247,11 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cancel_button = InlineKeyboardButton("Отмена", callback_data="cancel_block")
     keyboard.append([cancel_button])
 
-    await update.message.reply_text(
+    sent_message = await update.message.reply_text(
         "Выберите подростка:", reply_markup=InlineKeyboardMarkup(keyboard)
     )
+    context.user_data["action_message_id"] = sent_message.message_id
+    context.user_data["action_chat_id"] = update.message.chat_id
 
 
 async def handle_user_selection_unblock(update: Update, context: ContextTypes.DEFAULT_TYPE):
