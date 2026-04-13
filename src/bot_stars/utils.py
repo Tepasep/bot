@@ -30,6 +30,11 @@ def decline_stars_message(stars: int) -> str:
     return decline_text_by_number(stars, "звезду", "звезды", "звёзд")
 
 
+def decline_stars_balance(stars: int) -> str:
+    """Склонение 'звезда' в именительном падеже (для отображения баланса)"""
+    return decline_text_by_number(stars, "звезда", "звезды", "звёзд")
+
+
 def format_date(date_str):
     """
     Функция для преобразования строки даты в формат "20 марта 2025".

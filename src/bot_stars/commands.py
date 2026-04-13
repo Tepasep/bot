@@ -29,6 +29,7 @@ from bot_stars.keyboards import (
 
 from bot_stars.utils import (
     decline_stars_message,
+    decline_stars_balance,
     decline_text_by_number,
     format_date,
     getSheetRepository,
@@ -471,7 +472,7 @@ async def _stars_process_operation(message_or_query, context: ContextTypes.DEFAU
 
         teen_name = context.user_data.get('selected_teen_name', 'Подросток')
         stars_word = decline_stars_message(stars)
-        new_stars_word = decline_stars_message(new_stars)
+        new_stars_word = decline_stars_balance(new_stars)
 
         success_message = (
             f"✅ Успешно!\n"
@@ -969,7 +970,7 @@ def enter_comment(operation: str):
                         int(selected_user_id), "Списание", stars, comment
                     )
                 dec_stars = decline_stars_message(stars)
-                new_dec_stars = decline_stars_message(new_stars)
+                new_dec_stars = decline_stars_balance(new_stars)
                 if stars == 1:
                     await update.message.reply_text(
                         f"{'Добавлена' if operation == 'add' else 'Списано'} 1 звезда у подростка {row[COLUMN_NAME]} {row[COLUMN_LASTNAME]}. Теперь у него {new_stars} {new_dec_stars}."
